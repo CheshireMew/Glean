@@ -13,94 +13,84 @@ class BaseForesightColumnScraper(ArticleScraper):
         self.column_url = column_url
         super().__init__(column_name, column_url, max_items=20)
         self.news_type = 'article'
+        self.list_url = column_url
 
-    async def scrape_important_news(self) -> List[Dict]:
-        """抓取单个专栏"""
+    async def _scrape_list_articles(self) -> List[Dict]:
+        """解析单个专栏的列表页。"""
         print(f"\n📚 抓取专栏: {self.column_name}")
-        articles = []
+        articles = self.create_result_buffer()
         processed_urls = set()
-        
-        try:
-            # 1. 访问专栏列表页
-            await self.fetch_page_with_delay(self.column_url)
-            await self.page.wait_for_timeout(3000)
-            
-            # 2. 获取文章列表项
-            article_elements = await self.page.query_selector_all('.article-content.TopicItem')
-            print(f"  [DEBUG] {self.column_name}: 找到 {len(article_elements)} 个文章")
-            
-            for article_el in article_elements:
-                try:
-                    # 提取标题
-                    title_el = await article_el.query_selector('.article-body-title')
-                    if not title_el: continue
-                    title = await self.safe_extract_text(title_el)
-                    if not title or len(title) < 5: continue
-                    
-                    # 提取链接
-                    link_el = await article_el.query_selector('a[href^="/article/detail/"]')
-                    if not link_el: continue
-                    url = await self.safe_get_attribute(link_el, 'href')
-                    if not url: continue
-                    if not url.startswith('http'):
-                        url = f"https://foresightnews.pro{url}"
-                    
-                    # 当前批次去重
-                    if url in processed_urls: continue
-                    processed_urls.add(url)
-                    
-                    # 提取其他信息
-                    summary_el = await article_el.query_selector('.article-body-content')
-                    summary = await self.safe_extract_text(summary_el) if summary_el else ''
-                    
-                    time_el = await article_el.query_selector('.article-time')
-                    time_str = await self.safe_extract_text(time_el) if time_el else ''
-                    
-                    published_at = datetime.now()
-                    if time_str and len(time_str) >= 10:
-                        try:
-                            published_at = datetime.strptime(time_str, '%Y-%m-%d %H:%M')
-                        except:
-                            try:
-                                published_at = datetime.strptime(time_str[:10], '%Y-%m-%d')
-                            except: pass
+        article_elements = await self.page.query_selector_all(
+            '.article-content.TopicItem'
+        )
+        print(f"  [DEBUG] {self.column_name}: 找到 {len(article_elements)} 个文章")
 
-                    # 增量抓取检查 (基类方法现在已经很强大了，支持 existing_urls 检查)
-                    # 因为每个 Scraper 都是独立的 site_name，所以 load_last_news 会独立加载各自的历史
-                    if self.should_stop_scraping(title, url, published_at):
-                        print(f"  [增量抓取] 遇到已抓取文章，停止")
-                        break
-                    
-                    # 数量限制
-                    if len(articles) >= self.max_items:
-                        print(f"  [数量限制] 已抓取 {self.max_items} 篇，停止")
-                        break
-                    
-                    # 内容处理
-                    content = summary if summary and len(summary) > 10 else title
-                    content = self.clean_content(content, title)
-                    
-                    article_item = {
-                        'title': title,
-                        'content': content,
-                        'url': url,
-                        'published_at': published_at,
-                        'is_marked_important': False,
-                        'site_importance_flag': '',
-                        'type': self.news_type,
-                        'author': self.column_name
-                    }
-                    
-                    articles.append(article_item)
-                    print(f"  ✅ {title[:30]}...")
-                    
-                except Exception as e:
-                    print(f"  解析文章失败: {e}")
+        for article_el in article_elements:
+            try:
+                title_el = await article_el.query_selector('.article-body-title')
+                if not title_el:
                     continue
-                    
-        except Exception as e:
-            print(f"  抓取专栏失败: {e}")
-            
+                title = await self.safe_extract_text(title_el)
+                if not title or len(title) < 5:
+                    continue
+
+                link_el = await article_el.query_selector(
+                    'a[href^="/article/detail/"]'
+                )
+                if not link_el:
+                    continue
+                url = await self.safe_get_attribute(link_el, 'href')
+                if not url:
+                    continue
+                if not url.startswith('http'):
+                    url = f"https://foresightnews.pro{url}"
+
+                if url in processed_urls:
+                    continue
+                processed_urls.add(url)
+
+                summary_el = await article_el.query_selector('.article-body-content')
+                summary = (
+                    await self.safe_extract_text(summary_el) if summary_el else ''
+                )
+                time_el = await article_el.query_selector('.article-time')
+                time_str = await self.safe_extract_text(time_el) if time_el else ''
+
+                published_at = datetime.now()
+                if time_str and len(time_str) >= 10:
+                    try:
+                        published_at = datetime.strptime(time_str, '%Y-%m-%d %H:%M')
+                    except Exception:
+                        try:
+                            published_at = datetime.strptime(time_str[:10], '%Y-%m-%d')
+                        except Exception:
+                            pass
+
+                if self.should_stop_scraping(title, url, published_at):
+                    print("  [增量抓取] 遇到已抓取文章，停止")
+                    break
+                if len(articles) >= self.max_items:
+                    print(f"  [数量限制] 已抓取 {self.max_items} 篇，停止")
+                    break
+
+                content = summary if summary and len(summary) > 10 else title
+                content = self.clean_content(content, title)
+                article_item = {
+                    'title': title,
+                    'content': content,
+                    'url': url,
+                    'published_at': published_at,
+                    'is_marked_important': False,
+                    'site_importance_flag': '',
+                    'type': self.news_type,
+                    'author': self.column_name,
+                }
+                articles.append(article_item)
+                print(f"  ✅ {title[:30]}...")
+            except Exception as e:
+                print(f"  解析文章失败: {e}")
+                continue
+
         print(f"  {self.column_name}: 抓取到 {len(articles)} 篇文章")
         return articles
 

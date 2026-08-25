@@ -5,8 +5,6 @@ ChainCatcher 文章爬虫（使用 Playwright）
 
 from .article_base import ArticleScraper
 from typing import List, Dict, Optional
-import asyncio
-import re
 
 class ChainCatcherArticleScraper(ArticleScraper):
     """ChainCatcher 文章爬虫"""
@@ -15,40 +13,11 @@ class ChainCatcherArticleScraper(ArticleScraper):
         super().__init__('ChainCatcher Article', 'https://www.chaincatcher.com', max_items=20)
         self.base_url = 'https://www.chaincatcher.com'
         self.list_url = 'https://www.chaincatcher.com/article'
-    
-    async def scrape_important_news(self) -> List[Dict]:
-        """抓取最新文章"""
-        all_articles = []
-        
-        try:
-            print(f"\n正在访问: {self.list_url}")
-            await self.fetch_page_with_delay(self.list_url)
-            await asyncio.sleep(3)
-            
-            # 抓取列表文章
-            try:
-                # 等待列表元素加载
-                await self.page.wait_for_selector('.article_wraper', timeout=10000)
-            except:
-                print("⚠️ 等待列表元素超时")
-
-            all_articles = await self._scrape_list_articles()
-            print(f"📋 抓取到: {len(all_articles)} 篇文章")
-            
-            # 应用限制
-            if len(all_articles) > self.max_items:
-                all_articles = all_articles[:self.max_items]
-        
-        except Exception as e:
-            print(f"❌ 抓取失败: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        return all_articles
+        self.list_wait_selector = '.article_wraper'
     
     async def _scrape_list_articles(self) -> List[Dict]:
         """抓取列表文章"""
-        articles = []
+        articles = self.create_result_buffer()
         
         # 查找文章容器 (List Page)
         # 结构: .items.pb-2 -> .article_wraper
@@ -128,57 +97,41 @@ class ChainCatcherArticleScraper(ArticleScraper):
 
     async def _fetch_article_details(self, url: str) -> Optional[Dict]:
         """获取文章详情"""
-        page = await self.browser.new_page()
         try:
-            await self.fetch_page_with_delay(url, page=page)
-            await asyncio.sleep(1)
-            
-            # Author: .information .name
-            author = "ChainCatcher"
-            try:
-                author_elem = await page.query_selector('.information .name')
-                if author_elem:
-                    author = await author_elem.text_content()
-                    author = author.strip()
-            except:
-                pass
-            
-            # Time: .information .time
-            published_at = None
-            try:
-                time_elem = await page.query_selector('.information .time')
-                if time_elem:
-                    published_at = await time_elem.text_content()
-                    published_at = published_at.strip()
-            except:
-                pass
-            
-            # Content
-            # 用户提到 ".article_content ... 我们就当作数据的内容"
-            # 如果这是指直接用摘要当内容，那我们已经在 list articles 里拿到了。
-            # 但通常我们需要全文。尝试找几个常见的正文容器。
-            content = ""
-            try:
-                # 尝试通用选择器
-                # 用户没有给正文的选择器，但给了摘要的选择器 .article_content (在列表页)
-                # 在详情页通常也有 .article_content 或 ID="content"
-                content_elem = await page.query_selector('.article_content') or \
-                               await page.query_selector('#content') or \
-                               await page.query_selector('.main-content')
-                               
-                if content_elem:
-                    content = await content_elem.inner_text()
-            except:
-                pass
-            
-            return {
-                'author': author,
-                'published_at': published_at,
-                'content': content
-            }
-            
+            async with self.detail_page(url, load_delay_seconds=1) as page:
+                author = "ChainCatcher"
+                try:
+                    author_elem = await page.query_selector('.information .name')
+                    if author_elem:
+                        author = (await author_elem.text_content()).strip()
+                except Exception:
+                    pass
+
+                published_at = None
+                try:
+                    time_elem = await page.query_selector('.information .time')
+                    if time_elem:
+                        published_at = (await time_elem.text_content()).strip()
+                except Exception:
+                    pass
+
+                content = ""
+                try:
+                    content_elem = (
+                        await page.query_selector('.article_content')
+                        or await page.query_selector('#content')
+                        or await page.query_selector('.main-content')
+                    )
+                    if content_elem:
+                        content = await content_elem.inner_text()
+                except Exception:
+                    pass
+
+                return {
+                    'author': author,
+                    'published_at': published_at,
+                    'content': content,
+                }
         except Exception as e:
             print(f"    ⚠️ 详情页加载失败: {e}")
             return None
-        finally:
-            await page.close()

@@ -15,7 +15,6 @@ export function useSelectedContentTab(contentKind) {
             action: () => deleteReviewEntry(id),
             successMessage: '删除成功',
             errorMessage: '删除失败',
-            listState,
         });
     };
 

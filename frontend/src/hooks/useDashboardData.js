@@ -4,10 +4,10 @@ import { useDashboardScraperRuntimeData } from './dashboard/useDashboardScraperR
 import { useFeaturedSelection } from './dashboard/useFeaturedSelection';
 
 
-export function useDashboardData(contentKind) {
+export function useDashboardData(contentKind, activeKey) {
     const overview = useDashboardOverviewData(contentKind);
-    const runtime = useDashboardScraperRuntimeData();
-    const featured = useFeaturedSelection();
+    const runtime = useDashboardScraperRuntimeData(activeKey === '2');
+    const featured = useFeaturedSelection(contentKind);
     const exportState = useDashboardExport(contentKind);
 
     return {
@@ -15,7 +15,9 @@ export function useDashboardData(contentKind) {
         spiders: runtime.spiders,
         spiderStatus: runtime.spiderStatus,
         rssSources: runtime.rssSources,
+        runtimeError: runtime.runtimeError,
         overview: overview.overview,
+        overviewState: overview.loadState,
         manuallyFeatured: featured.manuallyFeatured,
         setManuallyFeatured: featured.setManuallyFeatured,
         exportState,
@@ -23,6 +25,7 @@ export function useDashboardData(contentKind) {
             fetchStats: () => overview.refreshOverview({ includeStats: true }),
             fetchOverview: overview.refreshOverview,
             handleAddToFeatured: featured.handleAddToFeatured,
+            refreshRuntime: runtime.refreshRuntime,
             ...runtime.actions,
         },
     };

@@ -1,11 +1,13 @@
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Button, Space } from 'antd';
+import { Button, Space, Tag } from 'antd';
 
 import { useReviewQueueTab } from '../../hooks/dashboard/useReviewQueueTab';
 import ContentDataTable from './ContentDataTable';
+import ReviewRunnerPanel from './ReviewRunnerPanel';
 import { EXPORT_SCOPE } from '../../contracts/content';
+import { formatLocalDateTime } from '../../utils/time';
 
 const ReviewQueueTab = ({ spiders, onAddToFeatured, onShowExport, active, contentKind }) => {
     const listState = useReviewQueueTab(contentKind, active);
@@ -18,15 +20,13 @@ const ReviewQueueTab = ({ spiders, onAddToFeatured, onShowExport, active, conten
             ellipsis: true,
             render: (text, record) => <a href={record.source_url} target="_blank" rel="noopener noreferrer">{text}</a>,
         },
+        { title: '内容档案', dataIndex: 'profile_name', width: 120, render: (value) => <Tag>{value || '-'}</Tag> },
         { title: '来源', dataIndex: 'source_site', width: 120 },
         {
             title: '发布时间',
             dataIndex: 'published_at',
             width: 160,
-            render: (text) => {
-                const date = new Date(text);
-                return Number.isNaN(date.getTime()) ? text : date.toLocaleString();
-            },
+            render: formatLocalDateTime,
         },
         {
             title: '操作',
@@ -42,14 +42,17 @@ const ReviewQueueTab = ({ spiders, onAddToFeatured, onShowExport, active, conten
     ];
 
     return (
-        <ContentDataTable
-            listState={listState}
-            columns={columns}
-            spiders={spiders}
-            contentKind={contentKind}
-            exportScope={EXPORT_SCOPE.REVIEW}
-            onShowExport={onShowExport}
-        />
+        <div style={{ padding: '0 10px' }}>
+            <ReviewRunnerPanel contentKind={contentKind} />
+            <ContentDataTable
+                listState={listState}
+                columns={columns}
+                spiders={spiders}
+                contentKind={contentKind}
+                exportScope={EXPORT_SCOPE.REVIEW}
+                onShowExport={onShowExport}
+            />
+        </div>
     );
 };
 

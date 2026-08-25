@@ -1,12 +1,13 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Table, Space, Tag } from 'antd';
+import { Button, Table, Space, Tag } from 'antd';
 
 export default function ExportItemsTable({
     visibleItems,
     loading,
     selectedIds,
     setSelectedIds,
+    onRemoveFeatured,
 }) {
     const columns = [
         {
@@ -23,6 +24,8 @@ export default function ExportItemsTable({
         {
             title: '标题',
             dataIndex: 'title',
+            width: 300,
+            ellipsis: true,
             render: (text, record) => <a href={record.source_url} target="_blank" rel="noopener noreferrer">{text}</a>,
         },
         {
@@ -38,12 +41,21 @@ export default function ExportItemsTable({
             ellipsis: true,
             render: (text) => <span style={{ fontSize: 12, color: '#666' }}>{text || '-'}</span>,
         },
+        {
+            title: '操作',
+            width: 90,
+            fixed: 'right',
+            render: (_, record) => record.isFeatured
+                ? <Button type="link" danger onClick={() => onRemoveFeatured(record.outputKey)}>移出</Button>
+                : '-',
+        },
     ];
 
     return (
         <Table
+            className="admin-data-table export-items-table"
             dataSource={visibleItems}
-            rowKey="id"
+            rowKey="outputKey"
             loading={loading}
             pagination={false}
             rowSelection={{
@@ -61,6 +73,7 @@ export default function ExportItemsTable({
                 rowExpandable: (record) => !!record.content || !!record.review_summary,
             }}
             columns={columns}
+            scroll={{ x: 900 }}
         />
     );
 }
@@ -68,6 +81,7 @@ export default function ExportItemsTable({
 ExportItemsTable.propTypes = {
     visibleItems: PropTypes.arrayOf(PropTypes.object).isRequired,
     loading: PropTypes.bool.isRequired,
-    selectedIds: PropTypes.arrayOf(PropTypes.number).isRequired,
+    selectedIds: PropTypes.arrayOf(PropTypes.string).isRequired,
     setSelectedIds: PropTypes.func.isRequired,
+    onRemoveFeatured: PropTypes.func.isRequired,
 };

@@ -1,0 +1,22 @@
+import { requestOperation } from './operations';
+
+export const listEntities = (params = {}) => requestOperation('listEntities', { params });
+export const createEntity = (data) => requestOperation('createEntity', { data });
+export const updateEntity = (entityId, data) => requestOperation('updateEntity', { path: { entityId }, data });
+export const attachEventEntity = (eventId, data) => requestOperation('attachEventEntity', { path: { eventId }, data });
+export const listNarratives = () => requestOperation('listNarratives');
+export const createNarrative = (data) => requestOperation('createNarrative', { data });
+export const updateNarrative = (narrativeId, data) => requestOperation('updateNarrative', { path: { narrativeId }, data });
+export const attachEventNarrative = (eventId, data) => requestOperation('attachEventNarrative', { path: { eventId }, data });
+export const classifyEvent = (eventId) => requestOperation('classifyEvent', { path: { eventId } });
+export const classifyRecentEvents = (params = {}) => requestOperation('classifyRecentEvents', { params });
+export const listWatchlists = () => requestOperation('listWatchlists');
+export const createWatchlist = (data) => requestOperation('createWatchlist', { data });
+export const updateWatchlist = (watchlistId, data) => requestOperation('updateWatchlist', { path: { watchlistId }, data });
+export const listAlertPolicies = () => requestOperation('listAlertPolicies');
+export const createAlertPolicy = (data) => requestOperation('createAlertPolicy', { data });
+export const updateAlertPolicy = (policyId, data) => requestOperation('updateAlertPolicy', { path: { policyId }, data });
+export const evaluateAlertPolicies = (params = {}) => requestOperation('evaluateAlertPolicies', { params });
+export const listAlertMatches = (params = {}) => requestOperation('listAlertMatches', { params });
+export const getPublicEntity = (slug, params = {}) => requestOperation('getPublicEntity', { path: { slug }, params });
+export const getPublicNarrative = (slug, params = {}) => requestOperation('getPublicNarrative', { path: { slug }, params });

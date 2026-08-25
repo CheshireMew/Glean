@@ -1,327 +1,107 @@
-# 分析师API使用文档
+# AINews API 概览
 
-## 概述
+API 默认运行在 `http://localhost:8000`，业务路由统一使用 `/api` 前缀。后台接口使用登录获得的 Bearer Token；公开接口不需要登录。
 
-AINEWS分析师API允许授权用户通过HTTP请求获取AI筛选的高质量加密货币新闻数据。该API专为二次分析、AI投资建议生成等场景设计。
+## 公开接口
 
-**基础URL**: `https://你的域名或服务器IP/api/analyst/news`
+- `GET /api/public/content?stream=briefs|longform&limit=20&cursor=...`
+- `GET /api/public/reports?kind=news|article&limit=20&offset=0`
+- `GET /api/public/search?query=关键词&kind=news|article|all`
+- `GET /api/public/rss.xml?kind=news|article&limit=20`
+- `GET /api/public/events/{id}`：返回公开时间线、关键事实、来源证据、关联事件、更正、实体、叙事和市场窗口
+- `GET /api/public/entities/{slug}`
+- `GET /api/public/narratives/{slug}`：包含 90 天公开事件趋势
 
----
+公开内容只读取每种内容类型的默认内容档案。返回项包含规范来源、事件来源数、全部来源链接、审核结果、补充摘要和实际引用。
 
-## 认证
+公开内容流使用 `(published_at, id)` 游标分页。首次请求不传 `cursor`，后续使用响应中的 `next_cursor`；游标无效时返回 400。日报与搜索目前使用 `limit + offset`，所有公开接口的 `limit` 上限为 100。
 
-所有API请求都需要提供有效的API密钥。
+## 后台内容接口
 
-### 获取API密钥
+- `GET /api/content/overview`
+- `GET /api/content/incoming`
+- `GET /api/content/events`
+- `GET /api/content/archive`
+- `GET /api/content/blocked`
+- `GET /api/content/review`
+- `GET /api/content/decisions?decision=selected|discarded`
+- `GET /api/content/export`
 
-联系项目管理员获取您的专属API密钥。管理员可以在"API配置"界面设置 `analyst_api_key`。
+后台列表分页上限为每页 200。`/api/content/export` 不套用列表页固定条数上限，而是用独立数据库连接每 500 行读取一批并持续输出 JSON 数组；可用 `scope`、日期、关键词、来源、内容类型和 `fields` 过滤。日期必须是 ISO 格式，开始日期不能晚于结束日期。
 
-### 如何使用密钥
+## 流水线接口
 
-在请求中添加 `api_key` 参数：
+- `POST /api/content/events/cluster`
+- `POST /api/content/events/check-similarity`
+- `POST /api/content/blocked/apply`
+- `POST /api/content/review/run`
+- `POST /api/delivery/daily/news`
+- `POST /api/delivery/daily/article`
+- `POST /api/delivery/send`
+- `POST /api/delivery/retry`
 
-```
-GET /api/analyst/news?api_key=你的密钥&hours=24
-```
-
----
-
-## API端点
-
-### GET /api/analyst/news
-
-获取AI筛选的新闻数据。
-
-#### 请求参数
-
-| 参数 | 类型 | 必需 | 默认值 | 范围 | 说明 |
-|------|------|------|--------|------|------|
-| `api_key` | string | ✅ | - | - | API密钥 |
-| `hours` | integer | ❌ | 24 | 1-168 | 时间范围（小时） |
-| `min_score` | integer | ❌ | 6 | 1-10 | 最低AI评分 |
-| `limit` | integer | ❌ | 50 | 1-100 | 返回数量限制 |
-
-#### 响应格式
-
-**成功响应 (200 OK)**:
+手动审核请求只接受扫描范围和内容类型，审核标准始终来自内容档案：
 
 ```json
 {
-  "success": true,
-  "message": "成功获取 10 条新闻",
-  "data": {
-    "news": [
-      {
-        "id": 123,
-        "title": "比特币突破10万美元创历史新高",
-        "content": "据多家交易所数据显示，比特币价格今日...",
-        "source_url": "https://www.theblockbeats.info/flash/325934",
-        "source_site": "blockbeats",
-        "published_at": "2025-12-27 10:30:00",
-        "ai_score": 8.5,
-        "ai_summary": "重大市场事件：比特币价格突破心理关口"
-      }
-    ],
-    "metadata": {
-      "count": 10,
-      "time_range_hours": 24,
-      "min_score": 6,
-      "query_time": "2025-12-27 11:00:00"
-    }
-  }
+  "hours": 24,
+  "kind": "news"
 }
 ```
 
-**错误响应 (401 Unauthorized)**:
+所有发送请求都必须携带 8 到 128 字符的 `operation_key`，可用字符为字母、数字、冒号、点、下划线和连字符。相同操作键与相同内容可安全重试；相同键配不同内容会被拒绝。Telegram 消息按 4096 字符上限持久化分片，只有明确未发送或明确失败的分片能重试；网络结果不确定时接口返回 `needs_attention`，前台必须先让用户确认。
 
 ```json
 {
-  "success": false,
-  "message": "无效的API密钥。请检查api_key参数或联系管理员获取有效密钥。"
+  "entries": [
+    {"scope": "selected", "id": 12},
+    {"scope": "archive", "id": 18}
+  ],
+  "operation_key": "manual:news:20260812:7f2a"
 }
 ```
 
----
+`scope` 必须是 `incoming / archive / blocked / review / selected / discarded` 之一。操作及其内容引用会被持久化；可通过 `GET /api/delivery/operations` 和 `GET /api/delivery/operations/{operation_key}` 查询刷新前后仍未完成的交付。
 
-## 使用示例
+重试请求为：
 
-### Python
-
-#### 基础调用
-
-```python
-import requests
-
-# 配置
-API_URL = "https://你的域名/api/analyst/news"
-API_KEY = "your_api_key_here"
-
-# 发起请求
-response = requests.get(API_URL, params={
-    "api_key": API_KEY,
-    "hours": 24,
-    "min_score": 7,
-    "limit": 20
-})
-
-# 处理响应
-if response.status_code == 200:
-    data = response.json()
-    news_list = data['data']['news']
-    
-    for news in news_list:
-        print(f"标题: {news['title']}")
-        print(f"来源: {news['source_site']}")
-        print(f"评分: {news['ai_score']}")
-        print(f"链接: {news['source_url']}")
-        print(f"内容: {news['content'][:100]}...")
-        print("-" * 50)
-else:
-    print(f"请求失败: {response.status_code}")
-    print(response.text)
-```
-
-#### 使用AI进行分析
-
-```python
-import requests
-from openai import OpenAI  # 或使用DeepSeek SDK
-
-# 1. 获取新闻数据
-response = requests.get("https://你的域名/api/analyst/news", params={
-    "api_key": "your_api_key",
-    "hours": 12,
-    "min_score": 8
-})
-
-news_list = response.json()['data']['news']
-
-# 2. 汇总新闻
-news_summary = "\n\n".join([
-    f"标题: {n['title']}\n内容: {n['content'][:200]}..."
-    for n in news_list
-])
-
-# 3. 调用AI生成分析
-client = OpenAI(
-    api_key="your_deepseek_key",
-    base_url="https://api.deepseek.com"
-)
-
-response = client.chat.completions.create(
-    model="deepseek-chat",
-    messages=[
-        {
-            "role": "system",
-            "content": "你是一位专业的加密货币市场分析师，请基于提供的新闻给出投资建议。"
-        },
-        {
-            "role": "user",
-            "content": f"以下是最近的重要新闻：\n\n{news_summary}\n\n请分析这些新闻对加密市场的影响，并给出交易建议。"
-        }
-    ]
-)
-
-print(response.choices[0].message.content)
-```
-
-### JavaScript / Node.js
-
-```javascript
-const axios = require('axios');
-
-const API_URL = 'https://你的域名/api/analyst/news';
-const API_KEY = 'your_api_key_here';
-
-async function getNews() {
-  try {
-    const response = await axios.get(API_URL, {
-      params: {
-        api_key: API_KEY,
-        hours: 24,
-        min_score: 7,
-        limit: 30
-      }
-    });
-
-    const newsList = response.data.data.news;
-    
-    newsList.forEach(news => {
-      console.log('标题:', news.title);
-      console.log('评分:', news.ai_score);
-      console.log('来源:', news.source_site);
-      console.log('---');
-    });
-  } catch (error) {
-    console.error('请求失败:', error.response?.data || error.message);
-  }
+```json
+{
+  "operation_key": "manual:news:20260812:7f2a"
 }
-
-getNews();
 ```
 
-### cURL
+## 运行状态接口
 
-```bash
-# 基础请求
-curl "https://你的域名/api/analyst/news?api_key=your_key&hours=24&min_score=7"
+- `GET /health/live`：进程存活，不检查依赖
+- `GET /health/ready`：只检查 API 所需的数据库、结构版本、关键表和外键开关；未就绪返回 503
+- `GET /health/pipeline`：在 API 就绪基础上检查 worker 租约；流水线不可用时返回 503
+- `GET /`：兼容入口，返回 API 就绪状态和版本
 
-# 格式化输出
-curl "https://你的域名/api/analyst/news?api_key=your_key&hours=24" | jq .
-```
+每个 HTTP 响应包含 `X-Request-ID`，服务日志记录相同 ID、方法、路径、状态码和耗时。
 
----
+## 配置接口
 
-## 数据字段说明
+- `GET/POST /api/system/timezone`
+- `POST /api/system/settings`：原子保存时区、自动化运行窗口、批大小和日报时间
+- `GET/POST /api/config/automation`
+- `GET/POST /api/delivery/schedule`
+- `GET/POST /api/integration/ai`
+- `GET/POST /api/integration/telegram`
+- `GET/PUT /api/editorial/profiles`
+- `GET/POST/PUT/DELETE /api/rss/sources`
+- `POST/GET/PATCH/DELETE /api/integration/analyst/keys`
+- `GET /api/analyst/news`：使用 `X-API-Key` 读取分页后的已选入内容
 
-### 新闻对象
+## 情报编辑与发布接口
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `id` | integer | 新闻唯一标识 |
-| `title` | string | 新闻标题 |
-| `content` | string | 新闻完整内容 |
-| `source_url` | string | 原文链接 |
-| `source_site` | string | 来源网站（blockbeats, odaily, chaincatcher等） |
-| `published_at` | string | 发布时间（北京时间，格式：YYYY-MM-DD HH:MM:SS） |
-| `ai_score` | float | AI评分（1-10分，分数越高越重要） |
-| `ai_summary` | string | AI生成的摘要（可能为空） |
+- `POST /api/editorial/events/{id}/facts` 与 `PATCH /api/editorial/event-facts/{fact_id}`
+- `POST /api/editorial/events/{id}/relations`
+- `POST /api/intelligence/events/{id}/classify` 与 `POST /api/intelligence/classify`
+- `GET /api/editorial/drafts/{id}/preview`：生成与实际发布相同的标题、正文和分片，但不创建交付操作
+- `GET/POST/PUT /api/integration/analyst/subscriptions`
+- `POST /api/integration/analyst/subscriptions/deliver`
 
-### 元数据对象
+分析师读取还包括 `GET /api/analyst/events`、`events/{id}`、`entities`、`narratives`、`tags` 和 `delta`。变更订阅只接受已经配置的 Webhook 渠道，发送体的 `event` 固定为 `ainews.analyst.changes`，包含订阅信息、`from/to/has_more` 游标和变更数组。服务端通过持久化交付状态机发送；只有确认 2xx 后才推进订阅游标。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `count` | integer | 返回的新闻数量 |
-| `time_range_hours` | integer | 实际查询的时间范围 |
-| `min_score` | integer | 实际使用的最低评分 |
-| `query_time` | string | 查询时间 |
-
----
-
-## 最佳实践
-
-### 1. 合理设置参数
-
-- **短期分析**：`hours=6-12, min_score=8` - 获取最新的高质量新闻
-- **日度分析**：`hours=24, min_score=7` - 每日市场概览
-- **周度回顾**：`hours=168, min_score=6` - 一周重要新闻汇总
-
-### 2. 错误处理
-
-```python
-try:
-    response = requests.get(API_URL, params=params, timeout=10)
-    response.raise_for_status()  # 检查HTTP状态码
-    data = response.json()
-    
-    if not data.get('success'):
-        print(f"API错误: {data.get('message')}")
-except requests.exceptions.Timeout:
-    print("请求超时，请稍后重试")
-except requests.exceptions.RequestException as e:
-    print(f"网络错误: {e}")
-```
-
-### 3. 缓存机制
-
-建议实现本地缓存，避免频繁请求：
-
-```python
-import time
-import json
-
-cache = {"data": None, "timestamp": 0}
-CACHE_TTL = 300  # 5分钟
-
-def get_news_cached():
-    now = time.time()
-    if cache["data"] and (now - cache["timestamp"]) < CACHE_TTL:
-        return cache["data"]
-    
-    # 从API获取
-    response = requests.get(API_URL, params={"api_key": API_KEY})
-    data = response.json()
-    
-    cache["data"] = data
-    cache["timestamp"] = now
-    return data
-```
-
----
-
-## 使用限制
-
-- **频率限制**: 目前无限制（未来可能添加）
-- **数量限制**: 单次最多返回100条新闻
-- **时间范围**: 最多查询最近7天（168小时）的新闻
-
----
-
-## 常见问题
-
-### Q: 如何获取API密钥？
-A: 联系项目管理员。管理员在后台"API配置"中设置密钥后会提供给您。
-
-### Q: API密钥可以共享吗？
-A: 目前系统使用单一密钥，可以在团队内共享。未来可能支持多用户独立密钥。
-
-### Q: 返回的新闻是否实时？
-A: 新闻由定时爬虫抓取并经过AI筛选，通常延迟在数分钟到1小时之间。
-
-### Q: 如何确保数据安全？
-A: 
-1. 使用HTTPS加密传输
-2. 妥善保管API密钥，不要公开
-3. 生产环境部署时建议配置防火墙和访问控制
-
-### Q: 可以获取历史数据吗？
-A: 目前支持最近7天的数据。如需更久远的历史数据，请联系管理员。
-
----
-
-## 技术支持
-
-如有问题或建议，请联系项目管理员。
-
-**API版本**: v1.0  
-**最后更新**: 2025-12-27
+除流式导出和 RSS 外，`/api` 响应统一包含 `success / data / message / code / timestamp`，分页信息位于 `pagination`，失败详情位于 `error`。完整请求模型和响应结构以 FastAPI 生成的 `/docs` 为准。

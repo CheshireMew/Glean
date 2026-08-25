@@ -49,3 +49,13 @@ class PermissionError(APIException):
 class BusinessError(APIException):
     def __init__(self, message: str):
         super().__init__(message, code=400, error_type="BusinessError")
+
+
+class ConflictError(APIException):
+    def __init__(self, message: str):
+        super().__init__(message, code=409, error_type="ConflictError")
+
+
+class ServiceUnavailableError(APIException):
+    def __init__(self, message: str):
+        super().__init__(message, code=503, error_type="ServiceUnavailableError")

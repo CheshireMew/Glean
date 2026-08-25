@@ -27,7 +27,21 @@ export function subscribeAuthSession(listener) {
 }
 
 export function getAuthToken() {
-    return localStorage.getItem(TOKEN_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return null;
+    try {
+        const encodedPayload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        const paddedPayload = encodedPayload.padEnd(Math.ceil(encodedPayload.length / 4) * 4, '=');
+        const payload = JSON.parse(atob(paddedPayload));
+        if (!payload.exp || payload.exp * 1000 <= Date.now()) {
+            localStorage.removeItem(TOKEN_KEY);
+            return null;
+        }
+        return token;
+    } catch {
+        localStorage.removeItem(TOKEN_KEY);
+        return null;
+    }
 }
 
 export function setAuthToken(token) {

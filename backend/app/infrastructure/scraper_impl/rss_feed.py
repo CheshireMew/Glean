@@ -10,6 +10,8 @@ from .base import BaseScraper
 
 
 class RssFeedScraper(BaseScraper):
+    transport_kind = "rss"
+
     def __init__(self, source: Dict):
         super().__init__(source["display_name"], source["site_url"], max_items=source["default_limit"])
         self.news_type = source["content_kind"]
@@ -17,14 +19,15 @@ class RssFeedScraper(BaseScraper):
         self.parser_type = source.get("parser_type") or "generic"
 
     async def scrape_important_news(self) -> List[Dict]:
-        response = await self.fetch_page_with_delay(self.feed_url, return_response=True)
-        if not response:
-            return []
-
-        xml_content = await response.text()
-        soup = BeautifulSoup(xml_content, "html.parser")
+        xml_content = await self.fetch_text(self.feed_url)
+        if not xml_content:
+            raise RuntimeError("RSS 源返回了空响应")
+        soup = BeautifulSoup(xml_content, "xml")
         entries = soup.find_all("item") or soup.find_all("entry")
-        articles: List[Dict] = []
+        if not entries:
+            raise RuntimeError("RSS 响应中没有 item 或 entry，可能是源格式已变化")
+        articles: List[Dict] = self.create_result_buffer()
+        stopped_at_existing = False
 
         for entry in entries:
             title = self._extract_title(entry)
@@ -32,6 +35,7 @@ class RssFeedScraper(BaseScraper):
             if not title or not url:
                 continue
             if self.should_stop_scraping(title, url):
+                stopped_at_existing = True
                 break
 
             articles.append(
@@ -48,6 +52,8 @@ class RssFeedScraper(BaseScraper):
             if len(articles) >= self.max_items:
                 break
 
+        if not articles and not stopped_at_existing:
+            raise RuntimeError("RSS 条目存在，但没有解析出有效的标题和链接")
         return articles
 
     def _extract_title(self, entry) -> str:

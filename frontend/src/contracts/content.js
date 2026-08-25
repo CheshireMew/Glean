@@ -10,6 +10,14 @@ export const REVIEW_DECISION = Object.freeze({
     DISCARDED: contract.review.statuses.discarded,
 });
 
+export const ENRICHMENT_STATUS = Object.freeze({
+    PENDING: contract.enrichment.statuses.pending,
+    PROCESSING: contract.enrichment.statuses.processing,
+    COMPLETED: contract.enrichment.statuses.completed,
+    FAILED: contract.enrichment.statuses.failed,
+    NOT_APPLICABLE: contract.enrichment.statuses.notApplicable,
+});
+
 export const EXPORT_SCOPE = Object.freeze({
     INCOMING: contract.exportScopes.incoming,
     ARCHIVE: contract.exportScopes.archive,
@@ -33,7 +41,7 @@ export const FEED_TAB = Object.freeze({
 
 export const NEWSFEED_TABS = [
     { key: FEED_TAB.LONGFORM, label: '文章' },
-    { key: FEED_TAB.BRIEFS, label: '快讯', mobileOnly: true },
+    { key: FEED_TAB.BRIEFS, label: '快讯' },
     { key: FEED_TAB.ARTICLE_REPORTS, label: '文章日报' },
     { key: FEED_TAB.BRIEF_REPORTS, label: '快讯日报' },
 ];

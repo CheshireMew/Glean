@@ -1,27 +1,25 @@
 from __future__ import annotations
 
 from typing import Dict, List
-import sqlite3
 
 from shared.content_contract import (
-    ARCHIVE_STATUS_BLOCKED,
     ARCHIVE_STATUS_READY,
     ARCHIVE_TABLE,
 )
 from .base_repository import BaseRepository
-from .time_utils import get_beijing_time
+from ...core.time import format_utc_time
 
 _UNSET = object()
 
 
 class ArchiveRepository(BaseRepository):
-    def create_entry(self, news: Dict) -> None:
+    def create_entry(self, news: Dict, event_id: int) -> None:
         self.execute(
             f"""
             INSERT OR IGNORE INTO {ARCHIVE_TABLE} (
                 id, title, content, source_site, source_url, published_at, scraped_at, archived_at,
-                is_marked_important, site_importance_flag, archive_status, content_type, source_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
+                is_marked_important, site_importance_flag, archive_status, content_type, source_item_id, event_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)
             """,
             (
                 news["id"],
@@ -36,6 +34,7 @@ class ArchiveRepository(BaseRepository):
                 ARCHIVE_STATUS_READY,
                 news.get("type", "news"),
                 news["id"],
+                event_id,
             ),
         )
 
@@ -61,36 +60,6 @@ class ArchiveRepository(BaseRepository):
     ) -> bool:
         return self._update_status("source_url = ?", (source_url,), archive_status, block_reason, restored_from_blocklist, archived_at)
 
-    def restore_blocked_entries(self, content_kind: str = "news") -> int:
-        try:
-            cursor = self.execute(
-                f"""
-                UPDATE {ARCHIVE_TABLE}
-                SET archive_status = ?, restored_from_blocklist = 1
-                WHERE content_type = ? AND archive_status = ?
-                """,
-                (ARCHIVE_STATUS_READY, content_kind, ARCHIVE_STATUS_BLOCKED),
-            )
-            return cursor.rowcount
-        except Exception as exc:
-            print(f"批量恢复已拦截内容失败: {exc}")
-            return 0
-
-    def restore_blocked_entry(self, entry_id: int) -> bool:
-        try:
-            cursor = self.execute(
-                f"""
-                UPDATE {ARCHIVE_TABLE}
-                SET archive_status = ?, restored_from_blocklist = 1
-                WHERE id = ? AND archive_status = ?
-                """,
-                (ARCHIVE_STATUS_READY, entry_id, ARCHIVE_STATUS_BLOCKED),
-            )
-            return cursor.rowcount > 0
-        except Exception as exc:
-            print(f"恢复单条已拦截内容失败: {exc}")
-            return False
-
     def _update_status(
         self,
         where_clause: str,
@@ -111,7 +80,7 @@ class ArchiveRepository(BaseRepository):
             params.append(restored_from_blocklist)
         if archived_at is not _UNSET:
             updates.append("archived_at = ?")
-            params.append(archived_at if archived_at is not None else get_beijing_time().strftime("%Y-%m-%d %H:%M:%S"))
+            params.append(archived_at if archived_at is not None else format_utc_time())
 
         cursor = self.execute(
             f"UPDATE {ARCHIVE_TABLE} SET {', '.join(updates)} WHERE {where_clause}",
@@ -120,9 +89,26 @@ class ArchiveRepository(BaseRepository):
         return cursor.rowcount > 0
 
     def delete_by_source_url(self, source_url: str) -> bool:
-        try:
-            self.execute(f"DELETE FROM {ARCHIVE_TABLE} WHERE source_url = ?", (source_url,))
-            return True
-        except sqlite3.Error as exc:
-            print(f"删除归档内容失败: {exc}")
-            return False
+        cursor = self.execute(f"DELETE FROM {ARCHIVE_TABLE} WHERE source_url = ?", (source_url,))
+        return cursor.rowcount > 0
+
+    def delete_by_event(self, event_id: int) -> int:
+        return self.execute(f"DELETE FROM {ARCHIVE_TABLE} WHERE event_id = ?", (event_id,)).rowcount
+
+    def replace_event_source(self, event_id: int, replacement: Dict) -> int:
+        return self.execute(
+            f"""
+            UPDATE {ARCHIVE_TABLE}
+            SET title = ?, content = ?, source_site = ?, source_url = ?, published_at = ?, source_item_id = ?
+            WHERE event_id = ?
+            """,
+            (
+                replacement["title"],
+                replacement.get("content") or "",
+                replacement["source_site"],
+                replacement["source_url"],
+                replacement["published_at"],
+                replacement["id"],
+                event_id,
+            ),
+        ).rowcount

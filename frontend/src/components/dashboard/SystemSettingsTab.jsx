@@ -6,6 +6,7 @@ import AiProviderCard from './system-settings/AiProviderCard';
 import ApiKeysCard from './system-settings/ApiKeysCard';
 import SystemBasicsCard from './system-settings/SystemBasicsCard';
 import TelegramSettingsCard from './system-settings/TelegramSettingsCard';
+import EditorialProfilesCard from './system-settings/EditorialProfilesCard';
 
 export default function SystemSettingsTab() {
     return (
@@ -24,6 +25,12 @@ export default function SystemSettingsTab() {
                 </Col>
                 <Col xs={24} md={12}>
                     <TelegramSettingsCard />
+                </Col>
+            </Row>
+
+            <Row gutter={16}>
+                <Col xs={24}>
+                    <EditorialProfilesCard />
                 </Col>
             </Row>
 

@@ -1,11 +1,11 @@
-import client from './client';
+import { requestOperation } from './operations';
 import { setAuthToken } from '../auth/session';
 
 export const login = async (username, password) => {
     const formData = new URLSearchParams();
     formData.append('username', username);
     formData.append('password', password);
-    const res = await client.post('/login', formData);
+    const res = await requestOperation('login', { data: formData });
     const auth = res.data;
     if (auth.access_token) {
         setAuthToken(auth.access_token);
@@ -13,4 +13,4 @@ export const login = async (username, password) => {
     return auth;
 };
 
-export const updateCredentials = (data) => client.post('/system/credentials', data);
+export const updateCredentials = (data) => requestOperation('updateCredentials', { data });

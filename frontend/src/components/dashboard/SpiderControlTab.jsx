@@ -1,6 +1,6 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Row } from 'antd';
+import { Alert, Row } from 'antd';
 import ScraperCard from './ScraperCard';
 import RssSourceManager from './RssSourceManager';
 
@@ -13,6 +13,8 @@ const SpiderControlTab = ({
     spiders,
     spiderStatus,
     rssSources,
+    runtimeError,
+    onRetryRuntime,
     onRun,
     onCancel,
     onConfigChange,
@@ -30,6 +32,16 @@ const SpiderControlTab = ({
 
     return (
         <div style={{ padding: '0 10px' }}>
+            {runtimeError && (
+                <Alert
+                    type="error"
+                    showIcon
+                    title="无法读取爬虫运行状态"
+                    description={runtimeError}
+                    action={<button type="button" onClick={onRetryRuntime}>重试</button>}
+                    style={{ marginBottom: 16 }}
+                />
+            )}
             <RssSourceManager
                 sources={rssSources}
                 contentKind={contentKind}
@@ -62,6 +74,8 @@ SpiderControlTab.propTypes = {
     spiders: PropTypes.arrayOf(PropTypes.object).isRequired,
     spiderStatus: PropTypes.object.isRequired,
     rssSources: PropTypes.arrayOf(PropTypes.object).isRequired,
+    runtimeError: PropTypes.string,
+    onRetryRuntime: PropTypes.func.isRequired,
     onRun: PropTypes.func.isRequired,
     onCancel: PropTypes.func.isRequired,
     onConfigChange: PropTypes.func.isRequired,

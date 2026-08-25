@@ -8,6 +8,7 @@ import { clearAuthToken, getAuthToken } from '../auth/session';
 
 const client = axios.create({
     baseURL: `${API_BASE_URL}/api`,
+    timeout: 30000,
 });
 
 client.interceptors.request.use((config) => {
@@ -36,7 +37,7 @@ client.interceptors.response.use(
             }
             return {
                 ...response,
-                data: data.data || data,
+                data: Object.prototype.hasOwnProperty.call(data, 'data') ? data.data : data,
             };
         }
         return response;

@@ -1,4 +1,4 @@
-import { deleteIncomingContent, listIncomingContent } from '../../api/content';
+import { deleteSourceContent, listIncomingContent } from '../../api/content';
 import { runListAction } from './listStateHelpers';
 import { usePaginatedContentList } from './usePaginatedContentList';
 
@@ -12,10 +12,9 @@ export function useIncomingContentTab(contentKind) {
 
     const deleteItem = async (id) => {
         await runListAction({
-            action: () => deleteIncomingContent(id),
+            action: () => deleteSourceContent(id),
             successMessage: '删除成功',
             errorMessage: '删除失败',
-            listState,
         });
     };
 

@@ -1,26 +1,29 @@
 from __future__ import annotations
 
-import json
-from typing import Any, Dict
+from typing import Dict, Iterable
 
-from openai import AsyncOpenAI
+from .ai_runtime import ResilientAIClient
 
 
-class DeepSeekService:
-    def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com", model: str = "deepseek-chat"):
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self.model = model
+class EditorialAIService:
+    def __init__(
+        self,
+        providers: Iterable[Dict],
+        concurrency: int,
+        throttle_seconds: float = 0.0,
+        telemetry_observer=None,
+    ):
+        self.client = ResilientAIClient(
+            providers, concurrency, throttle_seconds, telemetry_observer
+        )
 
-    def _parse_json(self, content: str) -> Dict[str, Any]:
-        text = content.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            text = "\n".join(lines[1:])
-        if text.endswith("```"):
-            text = text[:-3].strip()
-        return json.loads(text)
-
-    async def review_title(self, title: str, review_prompt: str, content: str = "") -> Dict[str, Any]:
+    async def review_event(
+        self,
+        title: str,
+        review_prompt: str,
+        content: str = "",
+        telemetry_context: Dict | None = None,
+    ) -> Dict:
         system_prompt = """
 你是新闻审核助手。请基于用户给出的偏好判断内容是否应该进入精选输出。
 
@@ -47,17 +50,13 @@ class DeepSeekService:
 正文摘要：
 {content[:1200]}
 """
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+        parsed = await self.client.complete_json(
+            system=system_prompt,
+            user=user_prompt,
             temperature=0.2,
             max_tokens=300,
+            context={"stage": "review", **(telemetry_context or {})},
         )
-        raw = response.choices[0].message.content or "{}"
-        parsed = self._parse_json(raw)
         return {
             "passed": bool(parsed.get("passed", False)),
             "score": int(parsed.get("score", 0) or 0),
@@ -66,13 +65,66 @@ class DeepSeekService:
             "summary": str(parsed.get("summary", "") or ""),
         }
 
+    async def enrich_event(
+        self,
+        title: str,
+        sources: list[Dict],
+        enrichment_prompt: str,
+        telemetry_context: Dict | None = None,
+    ) -> Dict:
+        source_blocks = []
+        allowed_ids = set()
+        source_map = {}
+        for source in sources:
+            source_id = int(source["id"])
+            allowed_ids.add(source_id)
+            source_map[source_id] = {
+                "news_id": source_id,
+                "title": source["title"],
+                "source_site": source["source_site"],
+                "source_url": source["source_url"],
+            }
+            source_blocks.append(
+                f"[来源 {source_id}] {source['source_site']}\n标题：{source['title']}\n正文：{(source.get('content') or '')[:1400]}"
+            )
+        parsed = await self.client.complete_json(
+            system=(
+                "你是新闻研究编辑。只能使用给定来源中的事实，不得补写未提供的事实。"
+                "返回 JSON：summary、why_it_matters、background、citation_ids。"
+                "citation_ids 必须只包含实际支撑文字的来源编号；没有依据时相应字段留空。"
+            ),
+            user=f"编辑要求：{enrichment_prompt}\n\n事件：{title}\n\n" + "\n\n".join(source_blocks),
+            temperature=0.1,
+            max_tokens=900,
+            context={"stage": "enrichment", **(telemetry_context or {})},
+        )
+        citation_ids = []
+        for value in parsed.get("citation_ids") or []:
+            try:
+                source_id = int(value)
+            except Exception:
+                continue
+            if source_id in allowed_ids and source_id not in citation_ids:
+                citation_ids.append(source_id)
+        return {
+            "summary": str(parsed.get("summary") or ""),
+            "why_it_matters": str(parsed.get("why_it_matters") or ""),
+            "background": str(parsed.get("background") or ""),
+            "citations": [source_map[source_id] for source_id in citation_ids],
+        }
+
     async def test_connection(self):
         try:
-            await self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": "hello"}],
-                max_tokens=8,
+            await self.client.complete_json(
+                system="只返回 JSON。",
+                user='返回 {"ok": true}',
+                temperature=0,
+                max_tokens=20,
+                context={"stage": "connection_test"},
             )
             return {"ok": True, "message": "连接成功"}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+
+    async def close(self) -> None:
+        await self.client.close()

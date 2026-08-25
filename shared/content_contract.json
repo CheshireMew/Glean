@@ -5,8 +5,11 @@
   },
   "stages": {
     "incoming": "incoming",
-    "archived": "archived",
-    "duplicate": "duplicate"
+    "archived": "archived"
+  },
+  "events": {
+    "table": "content_events",
+    "sourceTable": "event_sources"
   },
   "archive": {
     "table": "archive_entries",
@@ -20,14 +23,78 @@
     "table": "review_entries",
     "statuses": {
       "pending": "pending",
+      "processing": "processing",
       "selected": "selected",
       "discarded": "discarded"
+    },
+    "maxAttempts": 3
+  },
+  "enrichment": {
+    "statuses": {
+      "pending": "pending",
+      "processing": "processing",
+      "completed": "completed",
+      "failed": "failed",
+      "notApplicable": "not_applicable"
     }
   },
   "delivery": {
     "statuses": {
       "pending": "pending",
+      "sent": "sent",
+      "expired": "expired"
+    }
+  },
+  "deliveryOperations": {
+    "statuses": {
+      "pending": "pending",
+      "sending": "sending",
+      "failed": "failed",
+      "needsAttention": "needs_attention",
       "sent": "sent"
+    },
+    "partStatuses": {
+      "pending": "pending",
+      "sending": "sending",
+      "failed": "failed",
+      "unknown": "unknown",
+      "sent": "sent"
+    },
+    "maxAttempts": 3,
+    "leaseSeconds": 180,
+    "staleSendingSeconds": 120
+  },
+  "telegram": {
+    "messageLimit": 4096
+  },
+  "scraperRuntime": {
+    "statuses": {
+      "idle": "idle",
+      "queued": "queued",
+      "running": "running",
+      "error": "error"
+    }
+  },
+  "scraperCommands": {
+    "types": {
+      "run": "run",
+      "stop": "stop"
+    },
+    "statuses": {
+      "pending": "pending",
+      "processing": "processing",
+      "completed": "completed",
+      "failed": "failed",
+      "cancelled": "cancelled"
+    }
+  },
+  "pushLogs": {
+    "statuses": {
+      "success": "success",
+      "failed": "failed",
+      "unknown": "unknown",
+      "needsAttention": "needs_attention",
+      "inProgress": "in_progress"
     }
   },
   "exportScopes": {
@@ -44,6 +111,6 @@
   },
   "configKeys": {
     "systemTimezone": "system.timezone",
-    "dedupThreshold": "automation.dedup.threshold"
+    "eventClusterThreshold": "automation.event.threshold"
   }
 }

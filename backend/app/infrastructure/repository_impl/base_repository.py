@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Union
 import sqlite3
 
 from shared.db_base import DatabaseBase
+from ..lease_fencing import assert_current_operation_lease
 
 
 class QueryResult:
@@ -38,15 +39,25 @@ class BaseRepository:
         managed_conn = self.conn is None
         conn = self.conn or self.db.connect()
         cursor = conn.cursor()
+        statement = query.lstrip().split(None, 1)[0].upper() if query.strip() else ""
+        is_write = statement in {"INSERT", "UPDATE", "DELETE", "REPLACE"}
+        started_transaction = False
         try:
+            if is_write and not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+                started_transaction = True
             cursor.execute(query, params)
             rows = cursor.fetchall() if cursor.description else []
-            if managed_conn and query.strip().upper().startswith(("INSERT", "UPDATE", "DELETE", "REPLACE")):
+            if started_transaction:
+                assert_current_operation_lease(conn)
                 conn.commit()
             return QueryResult(rows=rows, rowcount=cursor.rowcount, lastrowid=cursor.lastrowid)
-        except Exception as exc:
-            conn.rollback()
-            raise exc
+        except Exception:
+            # A repository may run inside a caller-owned unit of work or savepoint.
+            # Only the layer that opened a transaction is allowed to roll it back.
+            if started_transaction and conn.in_transaction:
+                conn.rollback()
+            raise
         finally:
             cursor.close()
             if managed_conn:

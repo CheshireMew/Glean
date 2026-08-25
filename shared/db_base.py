@@ -1,67 +1,16 @@
-"""数据库操作基类。"""
+"""数据库连接接口。"""
 
-from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Tuple
+from abc import ABC, abstractmethod
+from typing import Any
 
 
-class DatabaseBase:
-    """数据库操作基类，提供通用的 CRUD 和查询方法。"""
+class DatabaseBase(ABC):
+    """只定义数据库对象必须提供的连接能力。
 
-    @contextmanager
-    def get_cursor(self):
-        conn = self.connect()
-        cursor = conn.cursor()
-        try:
-            yield cursor
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+    查询、分页和写入统一由 repository 层负责，避免数据库对象与 repository
+    同时维护两套数据访问 API。
+    """
 
-    def execute_query(self, query: str, params: Tuple = ()) -> List[Dict]:
-        with self.get_cursor() as cursor:
-            cursor.execute(query, params)
-            return [dict(row) for row in cursor.fetchall()]
-
-    def execute_one(self, query: str, params: Tuple = ()) -> Optional[Dict]:
-        with self.get_cursor() as cursor:
-            cursor.execute(query, params)
-            row = cursor.fetchone()
-            return dict(row) if row else None
-
-    def execute_update(self, query: str, params: Tuple = ()) -> int:
-        with self.get_cursor() as cursor:
-            cursor.execute(query, params)
-            return cursor.rowcount
-
-    def execute_insert(self, query: str, params: Tuple = ()) -> int:
-        with self.get_cursor() as cursor:
-            cursor.execute(query, params)
-            return cursor.lastrowid
-
-    def paginated_query(
-        self,
-        table: str,
-        fields: str = "*",
-        where: str = "1=1",
-        where_params: Tuple = (),
-        order_by: str = "id DESC",
-        page: int = 1,
-        limit: int = 50,
-    ) -> Dict[str, Any]:
-        offset = (page - 1) * limit
-        query = f"SELECT {fields} FROM {table} WHERE {where} ORDER BY {order_by} LIMIT ? OFFSET ?"
-        data = self.execute_query(query, where_params + (limit, offset))
-
-        count_query = f"SELECT COUNT(*) as total FROM {table} WHERE {where}"
-        total_row = self.execute_one(count_query, where_params)
-        total = total_row["total"] if total_row else 0
-
-        return {
-            "data": data,
-            "total": total,
-            "page": page,
-            "limit": limit,
-        }
+    @abstractmethod
+    def connect(self) -> Any:
+        raise NotImplementedError

@@ -1,0 +1,1 @@
+"""AINews integration tests."""

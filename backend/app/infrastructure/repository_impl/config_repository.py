@@ -8,6 +8,10 @@ from .base_repository import BaseRepository
 
 
 class ConfigRepository(BaseRepository):
+    def get_by_prefix(self, prefix: str) -> dict[str, str]:
+        rows = self.execute("SELECT key, value FROM system_config WHERE key LIKE ?", (f"{prefix}%",)).fetchall()
+        return {row["key"]: row["value"] for row in rows}
+
     def get_config(self, key: str) -> Optional[str]:
         cursor = self.execute("SELECT value FROM system_config WHERE key = ?", (key,))
         row = cursor.fetchone()

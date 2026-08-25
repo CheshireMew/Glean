@@ -31,7 +31,7 @@ class PANewsScraper(BaseScraper):
                         await self.page.evaluate("el => el.click()", el)
                         toggle_clicked = True
                         break
-                except:
+                except Exception:
                     continue
             
             if not toggle_clicked:
@@ -52,15 +52,14 @@ class PANewsScraper(BaseScraper):
         except Exception as e:
             print(f"点击筛选按钮失败: {e}")
         
-        news_list = []
+        collector = self.create_candidate_collector()
+        news_list = collector.results
         
         # 2. 获取新闻列表
         # 增加对 /zh/ 的支持
         items = await self.page.query_selector_all('a[href*="/newsflash/"], a[href*="/article/"], a[href*="/zh/"]')
         
         print(f"[DEBUG] 找到 {len(items)} 个潜在新闻链接")
-        
-        processed_urls = set()
         
         for link in items:
             try:
@@ -93,10 +92,6 @@ class PANewsScraper(BaseScraper):
                 if not url.startswith('http'):
                     url = f"https://www.panewslab.com{url}"
                 
-                if url in processed_urls:
-                    continue
-                processed_urls.add(url)
-                
                 title = await self.safe_extract_text(link)
                 # 如果链接本身没文字，找找里面的 div 或 span
                 if not title:
@@ -123,13 +118,10 @@ class PANewsScraper(BaseScraper):
                 ''')
                 published_at = self.parse_relative_time(time_text) if time_text else datetime.now()
                 
-                # 6. 增量抓取
-                if self.should_stop_scraping(title, url, published_at):
-                    break
-                
-                # 7. 数量限制
-                if len(news_list) >= self.max_items:
-                    print(f"[数量限制] 已达到最大抓取数量 {self.max_items}，停止抓取")
+                decision = collector.consider(title, url, published_at)
+                if decision == "skip":
+                    continue
+                if decision == "stop":
                     break
                 
                 # 8. 获取完整内容
@@ -143,25 +135,13 @@ class PANewsScraper(BaseScraper):
                         extract_paragraphs=True
                     )
                 
-                # 清理内容
-                content = self.clean_content(content, title)
-               
-                # Fallback
-                if not content or len(content) < 10:
-                    print(f"  [DEBUG] 使用fallback: content长度={len(content) if content else 0}")
-                    content = title
-                
-                news_item = {
-                    'title': title,
-                    'content': content,
-                    'url': url,
-                    'published_at': published_at,
-                    'is_marked_important': True,
-                    'site_importance_flag': 'shoufa',
-                    'author': self.site_name
-                }
-                
-                news_list.append(news_item)
+                collector.append_standard(
+                    title=title,
+                    content=content,
+                    url=url,
+                    published_at=published_at,
+                    site_importance_flag='shoufa',
+                )
                 print(f"[DEBUG] 添加重要新闻: {title[:20]}...")
                 
             except Exception as e:
@@ -170,21 +150,3 @@ class PANewsScraper(BaseScraper):
         
         print(f"PANews: 抓取到 {len(news_list)} 条重要新闻")
         return news_list
-    
-    async def extract_time_from_container(self, container) -> str:
-        return ""
-
-
-# 测试代码
-if __name__ == '__main__':
-    import asyncio
-    
-    async def test():
-        scraper = PANewsScraper()
-        news = await scraper.run()
-        
-        for item in news[:5]:
-            print(f"\n标题: {item['title']}")
-            print(f"标识: {item['site_importance_flag']}")
-    
-    asyncio.run(test())

@@ -1,6 +1,6 @@
 
 from fastapi import Request
-from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.exceptions import HTTPException as FastAPIHTTPException, RequestValidationError
 from fastapi.responses import JSONResponse
 from logging import getLogger
 from .response import APIResponse
@@ -34,14 +34,27 @@ async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
         headers=exc.headers,
     )
 
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content=APIResponse.error(
+            message="请求参数无效",
+            code=422,
+            error_type="RequestValidationError",
+            details=exc.errors(),
+        ),
+    )
+
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.error("request_id=%s unhandled_exception=%s", request_id, exc, exc_info=True)
     return JSONResponse(
         status_code=500,
         content=APIResponse.error(
             message="服务器内部错误",
             code=500,
             error_type="InternalServerError",
-            details=str(exc) if logger.level <= 10 else None  # DEBUG模式才显示详情
+            details=str(exc) if logger.isEnabledFor(10) else None
         )
     )

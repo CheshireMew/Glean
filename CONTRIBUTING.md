@@ -16,7 +16,7 @@
 
 如果你发现了Bug，请遵循以下步骤：
 
-1. **检查现有 Issues**: 在提交新 Issue 前，请先搜索[现有 Issues](https://github.com/your-username/AINEWS/issues)，避免重复
+1. **检查现有 Issues**: 在当前代码托管页面搜索已有问题，避免重复；这份源码快照不内置或假定某个远程仓库地址
 2. **使用Issue模板**: 创建新Issue时，请提供以下信息：
    - Bug的详细描述
    - 复现步骤
@@ -44,7 +44,7 @@
 **环境**
 - OS: Windows 11
 - Python: 3.10.5
-- Node: 18.16.0
+- Node: 22.x
 ```
 
 ## 💡 功能建议
@@ -59,26 +59,21 @@
 
 ### 开发环境设置
 
-```bash
-# 1. Fork 本仓库到你的GitHub账号
+```powershell
+# 从维护者提供的真实代码来源取得项目后进入目录
+Set-Location E:\Code\AINEWS
 
-# 2. Clone你的Fork
-git clone https://github.com/YOUR_USERNAME/AINEWS.git
-cd AINEWS
-
-# 3. 添加上游仓库
-git remote add upstream https://github.com/original-owner/AINEWS.git
-
-# 4. 安装开发依赖
-cd crawler && pip install -r requirements.txt
-cd ../backend && pip install -r requirements.txt
-cd ../frontend && npm install
+python -m pip install -r requirements-dev.lock
+python -m playwright install chromium
+Set-Location frontend
+npm ci
+Set-Location ..
 ```
 
 ### 开发流程
 
 1. **创建分支**
-   ```bash
+   ```powershell
    git checkout -b feature/your-feature-name
    # 或
    git checkout -b fix/bug-description
@@ -90,16 +85,21 @@ cd ../frontend && npm install
    - 如果修改了API，请更新文档
 
 3. **测试你的修改**
-   ```bash
-   # 测试后端
-   python backend/main.py
-   
-   # 测试前端
-   cd frontend && npm run dev
+   ```powershell
+   # 后端回归
+   python -m compileall -q backend
+   python -m ruff check backend shared --select F --exclude backend/archive
+   python -m unittest discover -s backend/tests -v
+
+   # 前端静态检查、测试与不落盘构建
+   cd frontend
+   npm run lint
+   npm test
+   node --input-type=module -e "import { build } from 'vite'; await build({ build: { write: false } });"
    ```
 
 4. **提交更改**
-   ```bash
+   ```powershell
    git add .
    git commit -m "feat: 添加XXX功能" 
    # 或
@@ -107,12 +107,12 @@ cd ../frontend && npm install
    ```
 
 5. **推送到你的Fork**
-   ```bash
+   ```powershell
    git push origin feature/your-feature-name
    ```
 
 6. **创建Pull Request**
-   - 在GitHub上从你的分支创建PR到上游仓库的 `main` 分支
+   - 在实际代码托管平台上向维护分支创建 PR
    - 在PR描述中清楚说明你的修改
    - 链接相关的Issue（如果有）
 
@@ -221,13 +221,13 @@ export default NewsCard;
            pass
    ```
 
-2. **注册爬虫**
-   在 `backend/app/core/scrapers_registry.py` 中注册你的爬虫
+2. **选择传输并注册采集器**
+   静态页面、RSS、JSON API 和动态页面分别声明 `http`、`rss`、`api` 或 `browser`，然后在 `backend/app/infrastructure/scrapers.py` 中注册。
 
 3. **测试爬虫**
    ```bash
-   python backend/main.py
-   # 然后通过后台“爬虫控制”触发你的新爬虫
+   python -m backend.worker
+   # 同时启动 API 和前端，再通过后台“爬虫控制”触发新的采集器
    ```
 
 4. **更新文档**
@@ -249,7 +249,7 @@ export default NewsCard;
 
 ## 📄 许可证
 
-通过贡献代码，你同意你的贡献将遵循本项目的 MIT License。
+通过贡献代码，你同意你的贡献将遵循本项目的 GNU AGPL v3 或更高版本许可证。
 
 ---
 

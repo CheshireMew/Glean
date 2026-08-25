@@ -1,15 +1,18 @@
-$port = 8000
-Write-Host "Checking port $port..." -ForegroundColor Cyan
+$ErrorActionPreference = 'Stop'
+Set-Location -LiteralPath $PSScriptRoot
 
-$process = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
-if ($process) {
-    $pid_id = $process.OwningProcess
-    Write-Host "Found existing backend process (PID: $pid_id). Killing it..." -ForegroundColor Yellow
-    Stop-Process -Id $pid_id -Force -ErrorAction SilentlyContinue
-    Write-Host "Process killed." -ForegroundColor Green
-} else {
-    Write-Host "Port $port is free." -ForegroundColor Green
+$port = 8000
+$listeners = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
+if ($listeners.Count -gt 0) {
+    $owners = $listeners | Select-Object -ExpandProperty OwningProcess -Unique
+    foreach ($ownerPid in $owners) {
+        $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction SilentlyContinue
+        Write-Error "端口 $port 已被进程 $ownerPid 占用：$($owner.CommandLine)。请先明确停止该进程，本脚本不会强制结束它。"
+    }
+    exit 1
 }
 
-Write-Host "Starting Backend Service..." -ForegroundColor Cyan
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --env-file .env.development
+$python = if (Test-Path -LiteralPath 'D:\Tools\Python310\python.exe') { 'D:\Tools\Python310\python.exe' } else { 'python' }
+$env:AINEWS_ENV = 'development'
+Write-Host "Starting AINEWS backend in development mode..." -ForegroundColor Cyan
+& $python -m uvicorn backend.main:app --host 127.0.0.1 --port $port --reload

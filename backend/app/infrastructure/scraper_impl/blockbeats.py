@@ -25,8 +25,8 @@ class BlockBeatsScraper(BaseScraper):
         except Exception as e:
             print(f"点击筛选按钮失败: {e}")
         
-        news_list = []
-        processed_urls = set()
+        collector = self.create_candidate_collector()
+        news_list = collector.results
         
         # 获取所有新闻标题
         title_elements = await self.page.query_selector_all('.news-flash-title')
@@ -61,10 +61,6 @@ class BlockBeatsScraper(BaseScraper):
                 if url and not url.startswith('http'):
                     url = f"https://www.theblockbeats.info{url}"
 
-                if url in processed_urls:
-                    continue
-                processed_urls.add(url)
-
                 
                 # 提取时间 - BlockBeats的时间在标题文本开头（例如："08:31 新闻标题"）
                 time_match = re.match(r'^(\d{2}:\d{2})', title_text)
@@ -92,13 +88,10 @@ class BlockBeatsScraper(BaseScraper):
                 else:
                     importance_flag = style_check['style_flag']
                 
-                # 增量抓取：检查是否已经抓到上次的新闻
-                if self.should_stop_scraping(title, url, published_at):
-                    break  # 停止抓取
-                
-                # 数量限制：检查是否已达到最大抓取数量
-                if len(news_list) >= self.max_items:
-                    print(f"[数量限制] 已达到最大抓取数量 {self.max_items}，停止抓取")
+                decision = collector.consider(title, url, published_at)
+                if decision == "skip":
+                    continue
+                if decision == "stop":
                     break
                 
                 # 获取完整内容
@@ -114,24 +107,13 @@ class BlockBeatsScraper(BaseScraper):
                     ]
                     content = await self.fetch_full_content(url, content_selectors)
                 
-                # 清理内容前缀
-                content = self.clean_content(content, title)
-                
-                # 如果没获取到内容，使用标题作为fallback
-                if not content or len(content) < 10:
-                    content = title
-                
-                news_item = {
-                    'title': title,
-                    'content': content,
-                    'url': url,
-                    'published_at': published_at.strftime('%Y-%m-%d %H:%M:%S'),  # 转换为字符串格式
-                    'is_marked_important': True,
-                    'site_importance_flag': importance_flag,
-                    'author': self.site_name
-                }
-                
-                news_list.append(news_item)
+                collector.append_standard(
+                    title=title,
+                    content=content,
+                    url=url,
+                    published_at=published_at.strftime('%Y-%m-%d %H:%M:%S'),
+                    site_importance_flag=importance_flag,
+                )
                 print(f"[DEBUG] 添加重要新闻: {title[:30]}...")
                 
             except Exception as e:
@@ -140,19 +122,3 @@ class BlockBeatsScraper(BaseScraper):
         
         print(f"TheBlockBeats: 抓取到 {len(news_list)} 条重要新闻")
         return news_list
-
-
-# 测试代码
-if __name__ == '__main__':
-    import asyncio
-    
-    async def test():
-        scraper = BlockBeatsScraper()
-        news = await scraper.run()
-        
-        for item in news[:3]:
-            print(f"\n标题: {item['title']}")
-            print(f"链接: {item['url']}")
-            print(f"标识: {item['site_importance_flag']}")
-    
-    asyncio.run(test())

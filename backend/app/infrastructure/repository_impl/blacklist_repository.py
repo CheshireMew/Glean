@@ -17,29 +17,17 @@ class BlacklistRepository(BaseRepository):
             return True
         except sqlite3.IntegrityError:
             return False
-        except Exception as exc:
-            print(f"添加关键词失败: {exc}")
-            return False
 
     def remove_blacklist_keyword(self, blacklist_id: int) -> bool:
-        try:
-            cursor = self.execute("DELETE FROM keyword_blacklist WHERE id = ?", (blacklist_id,))
-            return cursor.rowcount > 0
-        except Exception as exc:
-            print(f"删除关键词失败: {exc}")
-            return False
+        cursor = self.execute("DELETE FROM keyword_blacklist WHERE id = ?", (blacklist_id,))
+        return cursor.rowcount > 0
 
     def get_blacklist_keywords(self, content_type: str = "news") -> List[Dict]:
-        try:
-            cursor = self.execute(
-                "SELECT id, keyword, match_type, type, created_at FROM keyword_blacklist WHERE type = ? ORDER BY created_at DESC",
-                (content_type,),
-            )
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
-        except Exception as exc:
-            print(f"获取关键词失败: {exc}")
-            return []
+        cursor = self.execute(
+            "SELECT id, keyword, match_type, type, created_at FROM keyword_blacklist WHERE type = ? ORDER BY created_at DESC",
+            (content_type,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
     def match_keyword(self, text_to_check: str, keywords: List[Dict]) -> str | None:
         for keyword_item in keywords:

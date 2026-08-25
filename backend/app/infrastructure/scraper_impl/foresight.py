@@ -20,15 +20,14 @@ class ForesightScraper(BaseScraper):
             important_switch = await self.page.query_selector('text=只看重要')
             if important_switch:
                 # 检查是否已开启
-                is_active = await important_switch.get_attribute('class') # 假设class变化，这里需要具体分析HTML，但点击是toggle
                 # Foresight的开关可能没有明确的aria-checked，简单起见先强制点击
                 await self.page.evaluate("el => el.click()", important_switch)
                 await self.page.wait_for_timeout(2000)
         except Exception as e:
             print(f"点击筛选按钮失败: {e}")
         
-        news_list = []
-        processed_urls = set()
+        collector = self.create_candidate_collector()
+        news_list = collector.results
         
         # 先获取当前页面的日期标题（如"12月24日"）
         date_headers = await self.page.query_selector_all('.collapse-title-month')
@@ -66,9 +65,6 @@ class ForesightScraper(BaseScraper):
                         # 暂时保留两种策略，打印出来确认
                         # 策略A: 去掉前缀 (当前逻辑)
                         url_stripped = f"https://foresightnews.pro{url[len('/foresightnews'):]}"
-                        # 策略B: 保留前缀
-                        url_kept = f"https://foresightnews.pro{url}"
-                        
                         # 默认使用去掉前缀的，但也可能有变
                         url = url_stripped
                         print(f"  [DEBUG] Processed URL (Stripped): {url}")
@@ -77,10 +73,6 @@ class ForesightScraper(BaseScraper):
                             url = f"/{url}"
                         url = f"https://foresightnews.pro{url}"
                         print(f"  [DEBUG] Processed URL (Normal): {url}")
-                
-                if url in processed_urls:
-                    continue
-                processed_urls.add(url)
                 
                 # 提取时间：查找最近的时间戳元素
                 published_at = None
@@ -137,13 +129,10 @@ class ForesightScraper(BaseScraper):
                 else:
                     importance_flag = style_check['style_flag']
                 
-                # 增量抓取：检查是否已经抓到上次的新闻
-                if self.should_stop_scraping(title, url, published_at):
-                    break  # 停止抓取
-                
-                # 数量限制：检查是否已达到最大抓取数量
-                if len(news_list) >= self.max_items:
-                    print(f"[数量限制] 已达到最大抓取数量 {self.max_items}，停止抓取")
+                decision = collector.consider(title, url, published_at)
+                if decision == "skip":
+                    continue
+                if decision == "stop":
                     break
                 
                 # 获取完整内容
@@ -155,25 +144,14 @@ class ForesightScraper(BaseScraper):
                         extract_paragraphs=True
                     )
                 
-                # 清理内容
-                content = self.clean_content(content, title)
-                
-                # 如果没获取到内容，使用标题作为fallback
-                if not content or len(content) < 10:
-                    content = title
-                
-                news_item = {
-                    'title': title,
-                    'content': content,
-                    'url': url,
-                    'source_site': self.site_name,
-                    'published_at': published_at,
-                    'is_marked_important': True,
-                    'site_importance_flag': importance_flag,
-                    'author': self.site_name
-                }
-                
-                news_list.append(news_item)
+                collector.append_standard(
+                    title=title,
+                    content=content,
+                    url=url,
+                    published_at=published_at,
+                    site_importance_flag=importance_flag,
+                    source_site=self.site_name,
+                )
                 print(f"[DEBUG] 添加重要新闻: {title[:30]}...")
                 
             except Exception as e:
@@ -182,33 +160,3 @@ class ForesightScraper(BaseScraper):
         
         print(f"Foresight News: 抓取到 {len(news_list)} 条重要新闻")
         return news_list
-    
-    async def extract_time_from_container(self, container) -> str:
-        """从容器中提取时间"""
-        try:
-            time_str = await container.evaluate('''
-                el => {
-                    const timeEl = el.querySelector('[class*="time"]') || 
-                                   el.querySelector('span');
-                    return timeEl ? timeEl.textContent : '';
-                }
-            ''')
-            return time_str
-        except:
-            return ""
-
-
-# 测试代码
-if __name__ == '__main__':
-    import asyncio
-    
-    async def test():
-        scraper = ForesightScraper()
-        news = await scraper.run()
-        
-        for item in news[:3]:
-            print(f"\n标题: {item['title']}")
-            print(f"链接: {item['url']}")
-            print(f"标识: {item['site_importance_flag']}")
-    
-    asyncio.run(test())

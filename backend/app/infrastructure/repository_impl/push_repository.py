@@ -2,39 +2,56 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from shared.content_contract import DELIVERY_STATUS_PENDING, REVIEW_STATUS_SELECTED, REVIEW_TABLE
+from shared.content_contract import (
+    DELIVERY_STATUS_PENDING,
+    ENRICHMENT_STATUS_COMPLETED,
+    REVIEW_STATUS_SELECTED,
+    REVIEW_TABLE,
+)
 from .base_repository import BaseRepository
 
 
 class PushRepository(BaseRepository):
-    def get_pending_review_entries(self, content_kind: str = "news") -> List[Dict]:
-        try:
-            cursor = self.execute(
-                f"""
+    def get_pending_delivery_entries(self, content_kind: str, profile_slug: str) -> List[Dict]:
+        cursor = self.execute(
+            f"""
+            SELECT r.* FROM {REVIEW_TABLE} r
+            WHERE r.content_type = ? AND r.profile_slug = ?
+              AND r.review_status = ? AND r.delivery_status = ?
+              AND r.enrichment_status = ?
+            ORDER BY r.queued_at ASC, r.id ASC
+            """,
+            (content_kind, profile_slug, REVIEW_STATUS_SELECTED, DELIVERY_STATUS_PENDING, ENRICHMENT_STATUS_COMPLETED),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_pending_review_entries(self, content_kind: str, profile_slug: str) -> List[Dict]:
+        cursor = self.execute(
+            f"""
                 SELECT r.*
                 FROM {REVIEW_TABLE} r
-                LEFT JOIN push_logs p ON r.id = p.news_id AND p.status = 'success'
+                LEFT JOIN push_logs p ON r.id = p.review_entry_id AND p.status = 'success'
                 WHERE p.id IS NULL
                   AND r.content_type = ?
+                  AND r.profile_slug = ?
                   AND r.review_status = ?
                   AND r.delivery_status = ?
-                  AND r.queued_at >= datetime('now', '-24 hours')
+                  AND r.enrichment_status = ?
                 ORDER BY r.queued_at ASC
-                """,
-                (content_kind, REVIEW_STATUS_SELECTED, DELIVERY_STATUS_PENDING),
-            )
-            return [dict(row) for row in cursor.fetchall()]
-        except Exception as exc:
-            print(f"Get Pending Review Entries Error: {exc}")
-            return []
+            """,
+            (
+                content_kind,
+                profile_slug,
+                REVIEW_STATUS_SELECTED,
+                DELIVERY_STATUS_PENDING,
+                ENRICHMENT_STATUS_COMPLETED,
+            ),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
-    def log_push_status(self, news_id: int, platform: str, status: str, message: str = None) -> bool:
-        try:
-            self.execute(
-                "INSERT INTO push_logs (news_id, platform, status, message) VALUES (?, ?, ?, ?)",
-                (news_id, platform, status, message),
-            )
-            return True
-        except Exception as exc:
-            print(f"Log Push Error: {exc}")
-            return False
+    def log_push_status(self, review_entry_id: int, platform: str, status: str, message: str = None, operation_key: str = None) -> bool:
+        self.execute(
+            "INSERT INTO push_logs (review_entry_id, operation_key, platform, status, message) VALUES (?, ?, ?, ?, ?)",
+            (review_entry_id, operation_key, platform, status, message),
+        )
+        return True

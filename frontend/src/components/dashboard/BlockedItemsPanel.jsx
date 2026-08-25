@@ -3,15 +3,11 @@ import PropTypes from 'prop-types';
 import { Button, Space, Popconfirm, Divider } from 'antd';
 
 import ContentDataTable from './ContentDataTable';
+import { formatLocalDateTime } from '../../utils/time';
 
 export default function BlockedItemsPanel({
     onAddToFeatured,
-    blockedItems,
-    loadingBlocked,
-    blockedPagination,
-    filterKeyword,
-    setFilterKeyword,
-    fetchBlockedItems,
+    blockedList,
     restoreItem,
     deleteBlockedItem,
     contentKind,
@@ -34,7 +30,7 @@ export default function BlockedItemsPanel({
             title: '发布时间',
             dataIndex: 'published_at',
             width: 160,
-            render: (text) => new Date(text).toLocaleString(),
+            render: formatLocalDateTime,
         },
         {
             title: '操作',
@@ -63,14 +59,7 @@ export default function BlockedItemsPanel({
                     <h3>3. 已拦截内容</h3>
                 </div>
                 <ContentDataTable
-                    listState={{
-                        items: blockedItems,
-                        loading: loadingBlocked,
-                        pagination: blockedPagination,
-                        filterKeyword,
-                        setFilterKeyword,
-                        fetchItems: fetchBlockedItems,
-                    }}
+                    listState={blockedList}
                     columns={blockedColumns}
                     contentKind={contentKind}
                     showSourceFilter={false}
@@ -83,12 +72,7 @@ export default function BlockedItemsPanel({
 
 BlockedItemsPanel.propTypes = {
     onAddToFeatured: PropTypes.func,
-    blockedItems: PropTypes.arrayOf(PropTypes.object).isRequired,
-    loadingBlocked: PropTypes.bool.isRequired,
-    blockedPagination: PropTypes.object.isRequired,
-    filterKeyword: PropTypes.string.isRequired,
-    setFilterKeyword: PropTypes.func.isRequired,
-    fetchBlockedItems: PropTypes.func.isRequired,
+    blockedList: PropTypes.object.isRequired,
     restoreItem: PropTypes.func.isRequired,
     deleteBlockedItem: PropTypes.func.isRequired,
     contentKind: PropTypes.string,

@@ -12,20 +12,22 @@
 2. `auto_pipeline_loop`
    负责在工作时间内串行推进内容处理。
 
-工作时间判断来自系统时区配置，默认窗口为北京时间 08:00 到 24:00。非工作时间不会继续跑自动处理链路。
+工作时间判断来自系统时区配置，默认窗口为北京时间 08:00 到 23:59。运行开关、起止时间、循环间隔、审核批大小和内容补充批大小都可以在系统设置中调整；窗口跨午夜时也能正确运行。非工作时间不会继续跑自动处理链路。
+
+API 与 worker 是两个独立进程。worker 启动时必须取得唯一运行租约，并持续刷新心跳；第二个 worker 无法取得租约时会直接退出。`/health/ready` 只判断 API 能否接流量，`/health/pipeline` 额外检查 worker 心跳。
 
 ## 自动处理链路
 
 `auto_pipeline_loop` 的实际执行顺序如下：
 
 1. 等待当前抓取任务结束
-2. 对 `news` 中的 `news` 类型内容做自动去重
-3. 对 `news` 中的 `article` 类型内容做自动去重
+2. 对 `news` 中的 `news` 类型来源做自动事件聚合
+3. 对 `news` 中的 `article` 类型来源做自动事件聚合
 4. 对 `archive_entries` 做黑名单拦截
-5. 对 `review_entries` 的待审核内容执行 AI 审核
-6. 将已选入且待发送的内容推送到 Telegram
+5. 对 `review_entries` 的待审核事件执行 AI 审核，并对入选事件做带引用的二次补充
+6. 到达日报时间时先生成并发送平衡日报，再实时发送默认内容档案中尚未发送的入选内容
 
-这条链路对应的实现入口在 [backend/main.py](E:/Work/Code/AINEWS/backend/main.py) 和 [automation_runtime_service.py](E:/Work/Code/AINEWS/backend/app/services/automation_runtime_service.py)。
+API 进程入口是 [backend/main.py](backend/main.py)，自动链路由 [backend/worker.py](backend/worker.py) 启动，并由 [automation_runtime_service.py](backend/app/services/automation_runtime_service.py) 调度。
 
 ## 步骤 1：抓取与入池
 
@@ -35,20 +37,15 @@
 - `news.type` 标识内容类型，当前使用 `news` 和 `article`
 - 这一步只负责采集，不做归档、审核或推送
 
-## 步骤 2：自动去重
+## 步骤 2：自动事件聚合
 
-自动去重会读取 `news` 中最近时间窗口内、仍可处理的内容，并给出两类结果：
+自动聚合会读取 `news` 中最近时间窗口内、仍可处理的来源报道：
 
-1. 非重复内容
-   直接写入 `archive_entries`，同时把 `news.stage` 更新为 `archived`
-
-2. 重复内容
-   保留在 `news`，并更新为：
-   - `stage = duplicate`
-   - `duplicate_of = <主内容 ID>`
-   - `is_local_duplicate = 1`
-
-这一步不会再创建额外的“中间池”表，归档池就是去重后的唯一落点。
+1. 相似报道组成一个 `content_events` 事件。
+2. 所有报道写入 `event_sources`，不会因相似而删除。
+3. 信息最完整的报道成为规范来源，其余报道保留自己的标题、正文和链接。
+4. 来源统一更新为 `news.stage = archived`，规范事件进入 `archive_entries`。
+5. 后续新报道可以加入已有事件。
 
 ## 步骤 3：黑名单拦截
 
@@ -69,9 +66,9 @@
 
 ## 步骤 4：AI 审核
 
-AI 审核只处理 `review_entries` 中 `review_status = pending` 的内容。
+AI 审核分批认领 `review_entries` 中 `review_status = pending` 的事件，认领期间状态为 `processing`。每个事件会按所有已启用的内容档案分别生成审核任务；各档案独立定义审核标准、最低分、补充要求和日报配额，默认档案的结果用于日报和公开内容。失败条目最多自动尝试三次，错误留在原条目中，之后可人工重新入队。
 
-审核结果写回同一张表：
+审核结果写回同一张表；单条调用失败只记录 `review_error`，不会中断同批其他事件。入选事件会根据 `event_sources` 中的全部来源生成 `enriched_summary / enriched_impact / enriched_background`，引用只能指向实际来源。
 
 - 通过：`review_status = selected`
 - 不通过：`review_status = discarded`
@@ -88,7 +85,7 @@ AI 审核只处理 `review_entries` 中 `review_status = pending` 的内容。
 
 ## 步骤 5：Telegram 实时发送
 
-自动发送读取 `review_entries` 中满足以下条件的内容：
+自动发送只读取默认内容档案中满足以下条件的内容：
 
 - `review_status = selected`
 - `delivery_status = pending`
@@ -100,23 +97,25 @@ AI 审核只处理 `review_entries` 中 `review_status = pending` 的内容。
 - `delivered_at` 写入时间
 - `push_logs` 记录发送日志
 
-发送失败时不会把内容移出审核池，只会留下失败日志，后续仍可重新处理。
+每次交付先写入 `delivery_operations` 和 `delivery_parts`。明确成功的分片保存 Telegram 消息 ID，明确失败的分片标记为 `failed`，网络中断等无法判断是否已送达的分片标记为 `unknown`，整体状态变为 `needs_attention`。内容只有在全部分片明确成功后才会变成 `delivery_status = sent`；重复提交相同操作键不会重复发送已成功分片。
 
 ## 每日日报
 
-每日日报不是 `auto_pipeline_loop` 默认每小时都会执行的步骤，它由专门的发送接口触发：
+`auto_pipeline_loop` 按系统设置中的循环间隔检查日报时间；快讯和文章各自每天最多自动发送一次。后台也可以通过以下接口强制触发：
 
 - `POST /api/delivery/daily/news`
 - `POST /api/delivery/daily/article`
 
+手动触发必须传稳定的 `operation_key`。日报正文与每条内容都会在发送前按 Telegram 的 4096 字符限制拆分，完整正文不会因单条过长而被静默截断。当天没有可发送内容时不会写入“已发送日期”，因此稍后有内容进入时仍可正常生成日报。
+
 日报生成逻辑会：
 
 1. 从 `review_entries` 读取最近 24 小时内已选入的内容
-2. 按分数和链接去重整理成日报正文
+2. 按分数、多来源印证、栏目上限和来源上限编排
 3. 发送到 Telegram
-4. 将最终结果写入 `daily_reports`
+4. 发送成功后写入 `daily_reports` 与 `daily_report_items`，并将对应内容标记为公开可见
 
-因此，`daily_reports` 是日报的唯一存储位置，不是实时发送队列。
+每次成功发布使用唯一 `publication_key`，日报条目同时冻结标题、链接、来源、摘要、补充内容与引用；后来删除或修改审核条目不会改变历史日报。因此，`daily_reports` 是不可变的发布历史，不是实时发送队列。
 
 ## 运行中会看到的核心状态
 
@@ -124,7 +123,6 @@ AI 审核只处理 `review_entries` 中 `review_status = pending` 的内容。
 
 - `incoming`
 - `archived`
-- `duplicate`
 
 ### `archive_entries.archive_status`
 
@@ -135,6 +133,7 @@ AI 审核只处理 `review_entries` 中 `review_status = pending` 的内容。
 ### `review_entries.review_status`
 
 - `pending`
+- `processing`
 - `selected`
 - `discarded`
 
@@ -142,13 +141,28 @@ AI 审核只处理 `review_entries` 中 `review_status = pending` 的内容。
 
 - `pending`
 - `sent`
+- `expired`
+
+### `delivery_operations.status`
+
+- `pending`：还有待发送分片
+- `sending`：有分片正在发送
+- `failed`：至少一个分片明确失败，可重试未完成分片
+- `needs_attention`：至少一个分片结果不确定，必须人工确认后重试
+- `sent`：全部分片明确成功
+
+### 抓取运行状态
+
+抓取命令带 worker 所有者、过期时间和尝试次数。worker 重启时会把租约已过期的 `processing` 命令恢复为 `pending`，把被中断的运行状态标记为错误。爬虫异常会保留原始错误和运行日志，不会再以空结果冒充成功；等待抓取完成超时也会让自动流水线失败并记录原因。
 
 ## 数据流简图
 
 ```text
 news (incoming)
-    ↓ 去重
-news (archived | duplicate)
+    ↓ 事件聚合
+content_events + event_sources
+    ↓ 规范事件归档
+news (archived)
     ↓
 archive_entries (ready)
     ↓ 黑名单拦截
@@ -156,11 +170,11 @@ archive_entries (blocked | reviewed)
     ↓
 review_entries (pending)
     ↓ AI 审核
-review_entries (selected | discarded)
-    ↓ Telegram 实时发送
+review_entries (selected + enriched | discarded)
+    ↓ 到点生成日报，再发送尚未覆盖的实时内容
 review_entries (delivery_status = sent)
-    ↓ 手动触发日报
-daily_reports
+    ↓
+daily_reports + daily_report_items
 ```
 
 ## 判断自动流程是否正常的最小检查点
@@ -168,5 +182,6 @@ daily_reports
 1. `news` 是否持续写入新内容
 2. `archive_entries` 是否出现新的 `ready` 或 `reviewed` 记录
 3. `review_entries` 是否出现新的 `pending / selected / discarded`
-4. `push_logs` 是否持续记录发送结果
-5. `daily_reports` 是否在触发日报后产生新记录
+4. `delivery_operations` 是否最终进入 `sent`，是否存在需要人工确认的 `needs_attention`
+5. `daily_reports` 是否在设定时间后产生当天记录
+6. `/health/ready` 是否返回 200；需要自动流水线时，再确认 `/health/pipeline` 返回 200

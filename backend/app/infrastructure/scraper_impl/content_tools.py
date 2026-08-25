@@ -60,22 +60,32 @@ def clean_content(content: str, title: str = "") -> str:
 
 def parse_relative_time(time_str: str) -> Optional[datetime]:
     now = datetime.now()
+    normalized = (time_str or "").strip()
 
-    match = re.search(r"(\d+)\s*分钟", time_str)
+    if normalized.replace(" ", "") == "刚刚":
+        return now
+
+    match = re.search(r"(\d+)\s*分钟", normalized)
     if match:
         return now - timedelta(minutes=int(match.group(1)))
 
-    match = re.search(r"(\d+)\s*小时", time_str)
+    match = re.search(r"(\d+)\s*小时", normalized)
     if match:
         return now - timedelta(hours=int(match.group(1)))
 
-    match = re.search(r"今天\s+(\d{1,2}):(\d{2})", time_str)
+    match = re.search(r"(\d+)\s*天", normalized)
+    if match:
+        return now - timedelta(days=int(match.group(1)))
+
+    match = re.search(r"今天\s+(\d{1,2}):(\d{2})", normalized)
     if match:
         hour, minute = int(match.group(1)), int(match.group(2))
         dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         return dt - timedelta(days=1) if dt > now else dt
 
-    match = re.search(r"(\d{1,2})月(\d{1,2})日\s+(\d{1,2}):(\d{2})", time_str)
+    match = re.search(
+        r"(\d{1,2})月(\d{1,2})日\s+(\d{1,2}):(\d{2})", normalized
+    )
     if match:
         month, day, hour, minute = map(int, match.groups())
         try:
@@ -84,7 +94,25 @@ def parse_relative_time(time_str: str) -> Optional[datetime]:
             return now
         return dt.replace(year=now.year - 1) if dt > now else dt
 
-    match = re.search(r"^(\d{1,2}):(\d{2})$", time_str.strip())
+    full_date = re.match(
+        r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$",
+        normalized,
+    )
+    if full_date:
+        year, month, day, hour, minute, second = full_date.groups()
+        try:
+            return datetime(
+                int(year),
+                int(month),
+                int(day),
+                int(hour or 0),
+                int(minute or 0),
+                int(second or 0),
+            )
+        except ValueError:
+            return None
+
+    match = re.search(r"^(\d{1,2}):(\d{2})$", normalized)
     if match:
         hour, minute = map(int, match.groups())
         dt = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -152,55 +180,49 @@ async def fetch_full_content(scraper, detail_url: str, content_selectors: List[s
 
     try:
         print(f"  [DEBUG] Fetching content from: {detail_url}")
-        detail_page = await scraper.browser.new_page()
-        try:
-            await detail_page.goto(detail_url, wait_until="domcontentloaded", timeout=30000)
-        except Exception as exc:
-            print(f"  [DEBUG] Navigation timeout (continuing): {exc}")
-
-        full_content = ""
-        for attempt in range(5):
-            try:
-                for selector in selectors:
-                    try:
-                        content_el = await detail_page.query_selector(selector)
-                        if not content_el:
-                            continue
-                        if extract_paragraphs:
-                            elements = await content_el.query_selector_all("p, li")
-                            if elements:
-                                lines = []
-                                for el in elements:
-                                    text = await safe_extract_text(el)
-                                    if not text:
-                                        continue
-                                    tag_name = await el.evaluate("el => el.tagName")
-                                    lines.append(f"- {text}" if tag_name == "LI" else text)
-                                full_content = "\n\n".join(lines)
+        async with scraper.detail_page(detail_url) as detail_page:
+            full_content = ""
+            for attempt in range(5):
+                try:
+                    for selector in selectors:
+                        try:
+                            content_el = await detail_page.query_selector(selector)
+                            if not content_el:
+                                continue
+                            if extract_paragraphs:
+                                elements = await content_el.query_selector_all("p, li")
+                                if elements:
+                                    lines = []
+                                    for el in elements:
+                                        text = await safe_extract_text(el)
+                                        if not text:
+                                            continue
+                                        tag_name = await el.evaluate("el => el.tagName")
+                                        lines.append(f"- {text}" if tag_name == "LI" else text)
+                                    full_content = "\n\n".join(lines)
+                                else:
+                                    full_content = await safe_extract_text(content_el)
                             else:
                                 full_content = await safe_extract_text(content_el)
-                        else:
-                            full_content = await safe_extract_text(content_el)
-                        if full_content and len(full_content) > 20:
-                            break
-                    except Exception:
-                        continue
-                if full_content and len(full_content) > 20:
-                    break
-                await detail_page.wait_for_timeout(1500)
-            except Exception as exc:
-                print(f"  [Attempt {attempt + 1}] 获取内容尝试失败: {exc}")
+                            if full_content and len(full_content) > 20:
+                                break
+                        except Exception:
+                            continue
+                    if full_content and len(full_content) > 20:
+                        break
+                    await detail_page.wait_for_timeout(1500)
+                except Exception as exc:
+                    print(f"  [Attempt {attempt + 1}] 获取内容尝试失败: {exc}")
 
-        if not full_content:
-            print(f"  [WARNING] 无法获取内容: {detail_url}")
-            try:
-                body = await detail_page.inner_html("body")
-                print(f"  [DEBUG] Body Preview: {body[:200]}...")
-            except Exception:
-                pass
+            if not full_content:
+                print(f"  [WARNING] 无法获取内容: {detail_url}")
+                try:
+                    body = await detail_page.inner_html("body")
+                    print(f"  [DEBUG] Body Preview: {body[:200]}...")
+                except Exception:
+                    pass
 
-        await detail_page.close()
-        return full_content if full_content else ""
+            return full_content if full_content else ""
     except Exception as exc:
         print(f"  获取详情页失败: {exc}")
         return ""

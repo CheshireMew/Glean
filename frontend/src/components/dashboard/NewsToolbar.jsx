@@ -10,7 +10,8 @@ const { Option } = Select;
  * 提供搜索、来源筛选、导出、刷新等标准功能，并支持扩展
  */
 const NewsToolbar = ({
-    onSearch,           // 搜索回调 (value) => {}
+    searchValue,
+    onSearchChange,
     searchPlaceholder = "搜索新闻...",
 
     spiders,            // 爬虫列表 (用于来源筛选) - 数组中元素为 {name: 'techflow', type: 'news'}
@@ -26,19 +27,6 @@ const NewsToolbar = ({
     children,           // 额外操作按钮 (如手动去重、时间筛选等)
     style               // 自定义样式
 }) => {
-    // 防抖处理搜索
-    const handleSearchChange = (e) => {
-        const value = e.target.value;
-        if (onSearch) {
-            // 清除之前的定时器
-            if (window.searchTimeout) clearTimeout(window.searchTimeout);
-            // 设置新的定时器 (500ms防抖)
-            window.searchTimeout = setTimeout(() => {
-                onSearch(value);
-            }, 500);
-        }
-    };
-
     const filteredSpiders = spiders && contentKind
         ? spiders.filter(s => s.type === contentKind)
         : spiders;
@@ -47,13 +35,14 @@ const NewsToolbar = ({
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, ...style }}>
             <Space size={12} wrap align="center">
                 {/* 1. 搜索框 */}
-                {onSearch && (
+                {onSearchChange && (
                     <Input
                         placeholder={searchPlaceholder}
                         allowClear
                         prefix={<SearchOutlined style={{ color: 'rgba(0,0,0,0.25)' }} />}
-                        onChange={handleSearchChange}
-                        style={{ width: 300 }}
+                        value={searchValue}
+                        onChange={(event) => onSearchChange(event.target.value)}
+                        style={{ width: 300, maxWidth: '80vw' }}
                     />
                 )}
 

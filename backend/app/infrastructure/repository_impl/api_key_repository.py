@@ -1,33 +1,37 @@
-from typing import List, Optional
+from typing import Optional
+import hashlib
 
 from .base_repository import BaseRepository
 
 
 class ApiKeyRepository(BaseRepository):
     def get_analyst_api_keys(self):
-        try:
-            cursor = self.execute('SELECT id, key_name, api_key, notes, enabled, created_at, last_used_at FROM api_keys ORDER BY id DESC')
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
-        except Exception as e:
-            print(f"获取 API Key 失败: {e}")
-            return []
+        cursor = self.execute('SELECT id, key_name, key_prefix, notes, enabled, created_at, last_used_at FROM api_keys ORDER BY id DESC')
+        return [dict(row) for row in cursor.fetchall()]
 
-    def create_analyst_api_key(self, key_name: str, api_key: str, notes: Optional[str]):
-        try:
-            cursor = self.execute(
-                'INSERT INTO api_keys (key_name, api_key, notes, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
-                (key_name, api_key, notes),
-            )
-            return cursor.lastrowid
-        except Exception as e:
-            print(f"创建 API Key 失败: {e}")
+    def create_analyst_api_key(self, key_name: str, raw_api_key: str, notes: Optional[str]):
+        api_key_hash = hashlib.sha256(raw_api_key.encode("utf-8")).hexdigest()
+        key_prefix = f"{raw_api_key[:12]}…"
+        cursor = self.execute(
+            'INSERT INTO api_keys (key_name, api_key, key_prefix, notes, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)',
+            (key_name, api_key_hash, key_prefix, notes),
+        )
+        return cursor.lastrowid
+
+    def authenticate(self, raw_api_key: str) -> Optional[dict]:
+        api_key_hash = hashlib.sha256(raw_api_key.encode("utf-8")).hexdigest()
+        row = self.execute(
+            "SELECT id, key_name FROM api_keys WHERE api_key = ? AND enabled = 1",
+            (api_key_hash,),
+        ).fetchone()
+        if not row:
             return None
+        self.execute("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?", (row["id"],))
+        return dict(row)
+
+    def set_enabled(self, key_id: int, enabled: bool) -> bool:
+        return self.execute("UPDATE api_keys SET enabled = ? WHERE id = ?", (int(enabled), key_id)).rowcount > 0
 
     def delete_analyst_api_key(self, key_id: int) -> bool:
-        try:
-            cursor = self.execute('DELETE FROM api_keys WHERE id = ?', (key_id,))
-            return cursor.rowcount > 0
-        except Exception as e:
-            print(f"删除 API Key 失败: {e}")
-            return False
+        cursor = self.execute('DELETE FROM api_keys WHERE id = ?', (key_id,))
+        return cursor.rowcount > 0

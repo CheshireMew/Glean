@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 export function useSelectionSet(items) {
     const [selectedIds, setSelectedIds] = useState([]);
-    const visibleSelectedIds = selectedIds.filter((id) => items.some((item) => item.id === id));
+    const visibleSelectedIds = selectedIds.filter((id) => items.some((item) => item.outputKey === id));
 
     const clearSelection = () => {
         setSelectedIds([]);
@@ -13,11 +13,11 @@ export function useSelectionSet(items) {
             setSelectedIds([]);
             return;
         }
-        setSelectedIds(items.map((item) => item.id));
+        setSelectedIds(items.map((item) => item.outputKey));
     };
 
     const invertSelection = () => {
-        const allIds = items.map((item) => item.id);
+        const allIds = items.map((item) => item.outputKey);
         setSelectedIds(allIds.filter((id) => !selectedIds.includes(id)));
     };
 

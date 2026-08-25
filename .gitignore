@@ -18,6 +18,9 @@ yarn-error.log
 # 环境变量
 .env
 .env.local
+/.env.*
+!/.env.example
+/frontend/.env.local*
 
 # IDE
 .vscode/

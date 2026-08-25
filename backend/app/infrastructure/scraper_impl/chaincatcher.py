@@ -43,7 +43,8 @@ class ChainCatcherScraper(BaseScraper):
         except Exception as e:
             print(f"点击筛选按钮失败: {e}")
         
-        news_list = []
+        collector = self.create_candidate_collector()
+        news_list = collector.results
         
         # 2. 获取所有新闻项
         # 遍历所有可能的文章容器，查找包含 selectedClass 的
@@ -65,8 +66,6 @@ class ChainCatcherScraper(BaseScraper):
                     items.append(container)
 
         print(f"[DEBUG] 找到 {len(items)} 个潜在新闻条目")
-        
-        processed_urls = set()
         
         for item in items:
             try:
@@ -114,10 +113,6 @@ class ChainCatcherScraper(BaseScraper):
                 if not url.startswith('http'):
                     url = f"https://www.chaincatcher.com{url}"
                 
-                if url in processed_urls:
-                    continue
-                processed_urls.add(url)
-                
                 # 5. 提取时间 - ChainCatcher有完整的timeattr属性（例如："2025-12-26 18:35:38"）
                 time_str = await item.evaluate('''
                     el => {
@@ -136,18 +131,15 @@ class ChainCatcherScraper(BaseScraper):
                 if time_str and len(time_str) > 10:  # 完整时间戳格式
                     try:
                         published_at = datetime.strptime(time_str, '%Y-%m-%d %H:%M:%S')
-                    except:
+                    except Exception:
                         published_at = self.parse_relative_time(time_str)
                 else:
                     published_at = self.parse_relative_time(time_str) if time_str else datetime.now()
                 
-                # 6. 增量抓取检查
-                if self.should_stop_scraping(title, url, published_at):
-                    break
-                
-                # 7. 数量限制检查
-                if len(news_list) >= self.max_items:
-                    print(f"[数量限制] 已达到最大抓取数量 {self.max_items}，停止抓取")
+                decision = collector.consider(title, url, published_at)
+                if decision == "skip":
+                    continue
+                if decision == "stop":
                     break
                 
                 # 8. 获取完整内容
@@ -157,24 +149,13 @@ class ChainCatcherScraper(BaseScraper):
                     content_selectors = ['.rich_text_content', '.article-content']
                     content = await self.fetch_full_content(url, content_selectors)
                 
-                # 清理内容前缀
-                content = self.clean_content(content, title)
-                
-                # Fallback
-                if not content or len(content) < 10:
-                    content = title
-                
-                news_item = {
-                    'title': title,
-                    'content': content,
-                    'url': url,
-                    'published_at': published_at.strftime('%Y-%m-%d %H:%M:%S'),  # 转换为字符串格式
-                    'is_marked_important': True,
-                    'site_importance_flag': 'selected_class',
-                    'author': self.site_name
-                }
-                
-                news_list.append(news_item)
+                collector.append_standard(
+                    title=title,
+                    content=content,
+                    url=url,
+                    published_at=published_at.strftime('%Y-%m-%d %H:%M:%S'),
+                    site_importance_flag='selected_class',
+                )
                 print(f"[DEBUG] 添加重要新闻: {title[:20]}...")
                 
             except Exception as e:
@@ -183,18 +164,3 @@ class ChainCatcherScraper(BaseScraper):
         
         print(f"ChainCatcher: 抓取到 {len(news_list)} 条重要新闻")
         return news_list
-
-
-# 测试代码
-if __name__ == '__main__':
-    import asyncio
-    
-    async def test():
-        scraper = ChainCatcherScraper()
-        news = await scraper.run()
-        
-        for item in news[:5]:
-            print(f"\n标题: {item['title']}")
-            print(f"标识: {item['site_importance_flag']}")
-    
-    asyncio.run(test())

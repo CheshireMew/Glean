@@ -14,10 +14,11 @@ export default function ExportFiltersPanel({
     setExportMinScore,
     loadItems,
     triggerDailyDelivery,
+    triggeringDaily,
 }) {
     return (
         <Card style={{ marginBottom: 16 }}>
-            <Space size="large">
+            <Space size="large" wrap className="export-filter-actions">
                 <div>
                     <span style={{ marginRight: 8 }}>时间范围:</span>
                     <TimeRangeSelect value={exportTimeRange} onChange={setExportTimeRange} />
@@ -36,7 +37,7 @@ export default function ExportFiltersPanel({
                 <Button type="primary" onClick={loadItems} loading={loading}>
                     加载内容
                 </Button>
-                <Button onClick={triggerDailyDelivery}>
+                <Button onClick={triggerDailyDelivery} loading={triggeringDaily}>
                     触发日报推送
                 </Button>
             </Space>
@@ -52,4 +53,5 @@ ExportFiltersPanel.propTypes = {
     setExportMinScore: PropTypes.func.isRequired,
     loadItems: PropTypes.func.isRequired,
     triggerDailyDelivery: PropTypes.func.isRequired,
+    triggeringDaily: PropTypes.bool.isRequired,
 };

@@ -13,7 +13,6 @@ from .article_base import ArticleScraper
 from typing import List, Dict
 from datetime import datetime
 import re
-import asyncio
 
 
 class BlockBeatsArticleScraper(ArticleScraper):
@@ -24,49 +23,18 @@ class BlockBeatsArticleScraper(ArticleScraper):
         # 修改为精选文章页面
         self.article_list_url = 'https://www.theblockbeats.info/article_choice'
         self.base_url = 'https://www.theblockbeats.info'
-    
-    async def scrape_important_news(self) -> List[Dict]:
-        """抓取精选文章"""
-        all_articles = []
-        
-        try:
-            # 使用 Playwright 访问列表页
-            print(f"\n正在访问: {self.article_list_url}")
-            # 使用 fetch_page_with_delay 启用反爬机制 (随机UA, 延迟, 完整请求头)
-            await self.fetch_page_with_delay(self.article_list_url)
-            await asyncio.sleep(2)
-            
-            # 滚动到底部以触发懒加载
-            await self.page.evaluate('window.scrollTo(0, 500)')
-            await asyncio.sleep(1)
-            
-            print("页面已加载，等待选择器...")
-            
-            # 抓取列表文章
-            try:
-                await self.page.wait_for_selector('.article-item', timeout=5000)
-            except:
-                print("⚠️ 等待列表元素超时")
+        self.list_url = self.article_list_url
+        self.list_load_delay = 2
+        self.list_wait_selector = '.article-item'
+        self.list_wait_timeout = 5000
 
-            all_articles = await self._scrape_list_articles()
-            print(f"📋 精选文章: {len(all_articles)} 篇")
-            
-            # 应用限制
-            if len(all_articles) > self.max_items:
-                all_articles = all_articles[:self.max_items]
-                print(f"✂️ 限制到 {self.max_items} 篇")
-        
-        except Exception as e:
-            print(f"❌ 抓取失败: {e}")
-        
-        print(f"\nBlockBeats Article: 总计抓取到 {len(all_articles)} 篇文章")
-        return all_articles
-    
-    # 移除 _scrape_hot_articles 方法，保留 _scrape_list_articles
+    async def _prepare_list_page(self) -> None:
+        await self.page.evaluate('window.scrollTo(0, 500)')
+        await self.page.wait_for_timeout(1000)
     
     async def _scrape_list_articles(self) -> List[Dict]:
         """抓取普通列表文章"""
-        articles = []
+        articles = self.create_result_buffer()
         
         # 查找文章列表项
         article_items = await self.page.query_selector_all('.article-item')
@@ -91,7 +59,7 @@ class BlockBeatsArticleScraper(ArticleScraper):
                 
                 # 检查增量抓取
                 if self.should_stop_scraping(title, article_url):
-                    print(f"  [增量抓取] 匹配到历史记录，停止抓取")
+                    print("  [增量抓取] 匹配到历史记录，停止抓取")
                     break
                 
                 # 获取详情
@@ -101,7 +69,7 @@ class BlockBeatsArticleScraper(ArticleScraper):
                 
                 # 增量抓取检查：如果遇到已抓取的文章，停止抓取
                 if self.should_stop_scraping(title, article_url, details['published_at']):
-                    print(f"  [增量抓取] 遇到已抓取文章，停止")
+                    print("  [增量抓取] 遇到已抓取文章，停止")
                     break
                 
                 article_item = {
@@ -133,34 +101,19 @@ class BlockBeatsArticleScraper(ArticleScraper):
         获取文章详情（作者、时间、摘要）
         在新标签页中打开避免影响列表页
         """
-        # 使用 browser.new_page() 创建新页面（新上下文，避免影响主页面）
-        detail_page = await self.browser.new_page()
-        
         try:
-            # 使用 domcontentloaded 加快页面加载，增加超时到40秒
-            await self.fetch_page_with_delay(url, page=detail_page)
-            await detail_page.wait_for_timeout(1000)
-            
-            # 1. 提取发布时间
-            published_at = await self._extract_publish_time(detail_page)
-            
-            # 2. 提取作者（智能）
-            author = await self._extract_author(detail_page)
-            
-            # 3. 提取摘要
-            summary = await self._extract_summary(detail_page)
-            
-            return {
-                'published_at': published_at,
-                'author': author,
-                'summary': summary
-            }
-        
+            async with self.detail_page(url, load_delay_seconds=1) as detail_page:
+                published_at = await self._extract_publish_time(detail_page)
+                author = await self._extract_author(detail_page)
+                summary = await self._extract_summary(detail_page)
+                return {
+                    'published_at': published_at,
+                    'author': author,
+                    'summary': summary,
+                }
         except Exception as e:
             print(f"    ⚠️ 详情页解析失败: {e}")
             return None
-        finally:
-            await detail_page.close()
     
     async def _extract_publish_time(self, page) -> str:
         """提取发布时间"""
@@ -172,7 +125,7 @@ class BlockBeatsArticleScraper(ArticleScraper):
                 # 验证格式: "2025-12-29 17:10"
                 datetime.strptime(time_text, '%Y-%m-%d %H:%M')
                 return time_text
-        except:
+        except Exception:
             pass
         
         # 默认当前时间
@@ -233,7 +186,7 @@ class BlockBeatsArticleScraper(ArticleScraper):
                 author = author.strip()
                 if author and 2 <= len(author) <= 30:
                     return author
-        except:
+        except Exception:
             pass
         
         # 默认值
@@ -282,29 +235,6 @@ class BlockBeatsArticleScraper(ArticleScraper):
             
             return summary if summary else "BlockBeats 深度文章"
         
-        except Exception as e:
+        except Exception as exc:
+            print(f"生成文章摘要失败: {exc}")
             return "BlockBeats 深度文章"
-
-
-# 测试代码
-if __name__ == '__main__':
-    import asyncio
-    
-    async def test():
-        scraper = BlockBeatsArticleScraper()
-        # 使用 run() 方法自动管理浏览器生命周期
-        articles = await scraper.run()
-        
-        print(f"\n{'='*70}")
-        print(f"总计抓取: {len(articles)} 篇文章")
-        print(f"{'='*70}")
-        
-        for i, article in enumerate(articles[:5], 1):
-            print(f"\n{i}. {article['title']}")
-            print(f"   URL: {article['url']}")
-            print(f"   作者: {article['author']}")
-            print(f"   时间: {article['published_at']}")
-            print(f"   摘要: {article['content'][:100]}...")
-            print(f"   标记: {article['site_importance_flag']}")
-    
-    asyncio.run(test())

@@ -14,7 +14,6 @@ export function useArchiveContentTab(contentKind) {
             action: () => restoreArchiveEntry(id),
             successMessage: '已恢复到采集池',
             errorMessage: '恢复失败',
-            listState,
         });
     };
 
@@ -23,7 +22,6 @@ export function useArchiveContentTab(contentKind) {
             action: () => deleteArchiveContent(id),
             successMessage: '删除成功',
             errorMessage: '删除失败',
-            listState,
         });
     };
 

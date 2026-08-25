@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 
 from shared.content_contract import CONTENT_KINDS
 from ..core.exceptions import BusinessError, NotFoundError, ValidationError
-from ..infrastructure.repositories import repositories, transactional_repositories
 
 
 RSS_RUNTIME_PREFIX = "rss__"
@@ -23,46 +22,61 @@ def rss_slug_from_runtime_name(name: str) -> str | None:
 
 
 class RssSourceService:
-    @staticmethod
-    def _repos():
-        return repositories()
+    def __init__(self, rss_source_repository, transaction):
+        self._rss_source_repository = rss_source_repository
+        self._transaction = transaction
 
     def list_sources(self) -> Dict:
-        return {"sources": self._repos().rss_sources.list_sources()}
+        return {"sources": self._rss_source_repository().list_sources()}
 
     def list_enabled_sources(self) -> list[Dict]:
-        return self._repos().rss_sources.list_sources(enabled_only=True)
+        return self._rss_source_repository().list_sources(enabled_only=True)
 
     def get_source_by_runtime_name(self, name: str) -> Dict | None:
         slug = rss_slug_from_runtime_name(name)
         if not slug:
             return None
-        return self._repos().rss_sources.get_source_by_slug(slug)
+        return self._rss_source_repository().get_source_by_slug(slug)
 
     def create_source(self, payload: Dict) -> Dict:
-        with transactional_repositories() as tx_repos:
+        with self._transaction() as tx_repos:
             normalized = self._normalize_payload(payload)
-            self._ensure_unique(None, normalized)
+            self._ensure_unique(tx_repos, None, normalized)
             return tx_repos.rss_sources.create_source(normalized)
 
     def update_source(self, source_id: int, payload: Dict) -> Dict:
-        with transactional_repositories() as tx_repos:
+        with self._transaction() as tx_repos:
             existing = tx_repos.rss_sources.get_source(source_id)
             if not existing:
                 raise NotFoundError("RSS 源不存在")
+            old_runtime_name = rss_runtime_name(existing["slug"])
+            if tx_repos.scraper_state.is_active(old_runtime_name):
+                raise BusinessError("RSS 源正在采集，停止任务后才能修改")
             normalized = self._normalize_payload(payload)
-            self._ensure_unique(source_id, normalized)
+            self._ensure_unique(tx_repos, source_id, normalized)
             updated = tx_repos.rss_sources.update_source(source_id, normalized)
             if not updated:
                 raise NotFoundError("RSS 源不存在")
+            new_runtime_name = rss_runtime_name(normalized["slug"])
+            if new_runtime_name != old_runtime_name:
+                old_key = f"scraper.{old_runtime_name}.runtime"
+                new_key = f"scraper.{new_runtime_name}.runtime"
+                old_config = tx_repos.config.get_config(old_key)
+                if old_config and not tx_repos.config.get_config(new_key):
+                    tx_repos.config.set_config(new_key, old_config)
+                tx_repos.config.delete_config(old_key)
+                tx_repos.scraper_state.rename_state(old_runtime_name, new_runtime_name)
+                tx_repos.scraper_commands.rename_commands_for_scraper(old_runtime_name, new_runtime_name)
             return updated
 
     def delete_source(self, source_id: int) -> Dict:
-        with transactional_repositories() as tx_repos:
+        with self._transaction() as tx_repos:
             source = tx_repos.rss_sources.get_source(source_id)
             if not source:
                 raise NotFoundError("RSS 源不存在")
             runtime_name = rss_runtime_name(source["slug"])
+            if tx_repos.scraper_state.is_active(runtime_name):
+                raise BusinessError("RSS 源正在采集，停止任务后才能删除")
             deleted = tx_repos.rss_sources.delete_source(source_id)
             if not deleted:
                 raise NotFoundError("RSS 源不存在")
@@ -105,12 +119,12 @@ class RssSourceService:
             "enabled": enabled,
         }
 
-    def _ensure_unique(self, current_id: int | None, payload: Dict) -> None:
-        slug_match = self._repos().rss_sources.get_source_by_slug(payload["slug"])
+    def _ensure_unique(self, repo_set, current_id: int | None, payload: Dict) -> None:
+        slug_match = repo_set.rss_sources.get_source_by_slug(payload["slug"])
         if slug_match and slug_match["id"] != current_id:
             raise BusinessError("RSS 标识已存在")
 
-        for source in self._repos().rss_sources.list_sources():
+        for source in repo_set.rss_sources.list_sources():
             if source["id"] == current_id:
                 continue
             if source["feed_url"] == payload["feed_url"]:
@@ -142,6 +156,3 @@ class RssSourceService:
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValidationError("URL 无效")
         return value.strip()
-
-
-rss_source_service = RssSourceService()

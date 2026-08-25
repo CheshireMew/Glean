@@ -11,7 +11,8 @@ class RssSourceRepository(BaseRepository):
         cursor = self.execute(
             f"""
             SELECT id, slug, display_name, feed_url, site_url, content_kind, parser_type,
-                   default_limit, default_interval, enabled, created_at, updated_at
+                   default_limit, default_interval, enabled, authority_type, is_official,
+                   created_at, updated_at
             FROM rss_sources
             {where}
             ORDER BY enabled DESC, display_name COLLATE NOCASE ASC, id ASC
@@ -23,7 +24,8 @@ class RssSourceRepository(BaseRepository):
         cursor = self.execute(
             """
             SELECT id, slug, display_name, feed_url, site_url, content_kind, parser_type,
-                   default_limit, default_interval, enabled, created_at, updated_at
+                   default_limit, default_interval, enabled, authority_type, is_official,
+                   created_at, updated_at
             FROM rss_sources
             WHERE id = ?
             """,
@@ -36,7 +38,8 @@ class RssSourceRepository(BaseRepository):
         cursor = self.execute(
             """
             SELECT id, slug, display_name, feed_url, site_url, content_kind, parser_type,
-                   default_limit, default_interval, enabled, created_at, updated_at
+                   default_limit, default_interval, enabled, authority_type, is_official,
+                   created_at, updated_at
             FROM rss_sources
             WHERE slug = ?
             """,

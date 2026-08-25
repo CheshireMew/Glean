@@ -30,8 +30,8 @@ export function useDashboardExport(contentKind) {
         try {
             const params = { scope, kind: contentKind };
             if (dates?.length === 2) {
-                params.start_date = dates[0].format('YYYY-MM-DD HH:mm:ss');
-                params.end_date = dates[1].format('YYYY-MM-DD HH:mm:ss');
+                params.start_date = dates[0].toDate().toISOString();
+                params.end_date = dates[1].toDate().toISOString();
             }
             if (keyword) {
                 params.keyword = keyword;
@@ -48,6 +48,7 @@ export function useDashboardExport(contentKind) {
             document.body.appendChild(link);
             link.click();
             link.parentNode.removeChild(link);
+            window.URL.revokeObjectURL(url);
             setVisible(false);
             message.success('导出成功');
         } catch (error) {

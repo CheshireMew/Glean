@@ -27,7 +27,7 @@ const BlocklistTab = ({ onAddToFeatured, active, contentKind }) => {
         restoreAll,
         restoreItem,
         deleteBlockedItem,
-    } = useBlocklistRunner(contentKind, blockedList);
+    } = useBlocklistRunner(contentKind);
 
     return (
         <div style={{ padding: '0 10px' }}>
@@ -49,12 +49,7 @@ const BlocklistTab = ({ onAddToFeatured, active, contentKind }) => {
             />
             <BlockedItemsPanel
                 onAddToFeatured={onAddToFeatured}
-                blockedItems={blockedList.items}
-                loadingBlocked={blockedList.loading}
-                blockedPagination={blockedList.pagination}
-                filterKeyword={blockedList.filterKeyword}
-                setFilterKeyword={blockedList.setFilterKeyword}
-                fetchBlockedItems={blockedList.fetchItems}
+                blockedList={blockedList}
                 restoreItem={restoreItem}
                 deleteBlockedItem={deleteBlockedItem}
                 contentKind={contentKind}

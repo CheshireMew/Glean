@@ -27,8 +27,8 @@ class TechFlowScraper(BaseScraper):
         except Exception as e:
             print(f"点击筛选按钮失败: {e}")
         
-        news_list = []
-        processed_urls = set()
+        collector = self.create_candidate_collector()
+        news_list = collector.results
         
         # 获取所有新闻项
         dl_elements = await self.page.query_selector_all('dl')
@@ -72,20 +72,13 @@ class TechFlowScraper(BaseScraper):
                 if url and not url.startswith('http'):
                     url = f"https://www.techflowpost.com{url}"
                 
-                if url in processed_urls:
-                    continue
-                processed_urls.add(url)
-                
                 # 解析时间
                 published_at = self.parse_relative_time(time_text) if time_text else datetime.now()
 
-                # 增量抓取：检查是否已经抓到上次的新闻
-                if self.should_stop_scraping(title, url, published_at):
-                    break  # 停止抓取
-                
-                # 数量限制：检查是否已达到最大抓取数量
-                if len(news_list) >= self.max_items:
-                    print(f"[数量限制] 已达到最大抓取数量 {self.max_items}，停止抓取")
+                decision = collector.consider(title, url, published_at)
+                if decision == "skip":
+                    continue
+                if decision == "stop":
                     break
                 
                 # 获取快讯摘要作为fallback
@@ -100,24 +93,17 @@ class TechFlowScraper(BaseScraper):
                     content_selectors=['.art_detail_content']  # TechFlow特定选择器
                 ) if url else ""
                 
-                # 清理内容前缀
-                full_content = self.clean_content(full_content, title)
-                
-                # 如果没获取到内容，使用摘要
-                if not full_content or len(full_content) < 50:
-                    full_content = summary
-                
-                news_item = {
-                    'title': title,
-                    'content': full_content,
-                    'url': url,
-                    'published_at': published_at,
-                    'is_marked_important': True,
-                    'site_importance_flag': 'c002CCC' if has_important_class else 'first_pub',
-                    'author': self.site_name
-                }
-                
-                news_list.append(news_item)
+                collector.append_standard(
+                    title=title,
+                    content=full_content,
+                    fallback_content=summary,
+                    min_content_length=50,
+                    url=url,
+                    published_at=published_at,
+                    site_importance_flag=(
+                        'c002CCC' if has_important_class else 'first_pub'
+                    ),
+                )
                 print(f"[DEBUG] 添加重要新闻: {title[:30]}...")
                 
             except Exception as e:
@@ -126,21 +112,3 @@ class TechFlowScraper(BaseScraper):
         
         print(f"深潮TechFlow: 抓取到 {len(news_list)} 条重要新闻")
         return news_list
-
-
-
-# 测试代码
-if __name__ == '__main__':
-    import asyncio
-    
-    async def test():
-        scraper = TechFlowScraper()
-        news = await scraper.run()
-        
-        for item in news[:5]:
-            print(f"\n标题: {item['title']}")
-            print(f"链接: {item['url']}")
-            print(f"时间: {item['published_at']}")
-            print(f"标识: {item['site_importance_flag']}")
-    
-    asyncio.run(test())

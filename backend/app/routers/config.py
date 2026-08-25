@@ -1,150 +1,139 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
 
-from ..core.response import APIResponse
-from ..services.ai_provider_settings_service import ai_provider_settings_service
-from ..services.automation_settings_service import automation_settings_service
-from ..services.delivery_settings_service import delivery_settings_service
-from ..services.review_settings_service import review_settings_service
-from ..services.rss_source_service import rss_source_service
-from ..services.system_settings_service import system_settings_service
-from ..services.telegram_settings_service import telegram_settings_service
+from ..core.response import APIEnvelope, APIResponse, ErrorEnvelope
+from ..composition import app_services
+from ..models.config import (
+    AIProviderConfigRequest,
+    AIReviewConfigRequest,
+    AutomationConfigRequest,
+    ContentKind,
+    DeliveryScheduleConfig,
+    EditorialProfileRequest,
+    RssSourceRequest,
+    SystemSettingsRequest,
+    SystemTimezoneConfig,
+    TelegramConfigRequest,
+)
 from .auth import get_current_user
+from ..models.responses import (
+    AIProviderConfigData,
+    AutomationConfigData,
+    DeliveryScheduleData,
+    EditorialProfileData,
+    EditorialProfilesData,
+    ReviewSettingsData,
+    RssSourceData,
+    RssSourcesData,
+    TelegramConfigData,
+    TimezoneData,
+)
 
-router = APIRouter()
-
-
-class SystemTimezoneConfig(BaseModel):
-    timezone: str
-
-
-class DeliveryScheduleConfig(BaseModel):
-    news_time: str | None = None
-    article_time: str | None = None
-
-
-class AutomationWindowConfig(BaseModel):
-    dedup_hours: int | None = Field(default=None, ge=1, le=720)
-    dedup_window_hours: int | None = Field(default=None, ge=1, le=720)
-    filter_hours: int | None = Field(default=None, ge=1, le=720)
-    ai_scoring_hours: int | None = Field(default=None, ge=1, le=720)
-    push_hours: int | None = Field(default=None, ge=1, le=720)
+router = APIRouter(responses={400: {"model": ErrorEnvelope}, 422: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
 
 
-class AutomationConfigRequest(BaseModel):
-    news: AutomationWindowConfig | None = None
-    article: AutomationWindowConfig | None = None
-
-
-class TelegramConfigRequest(BaseModel):
-    bot_token: str
-    chat_id: str
-    enabled: bool = False
-
-
-class AIProviderConfigRequest(BaseModel):
-    api_key: str
-    base_url: str = "https://api.deepseek.com"
-    model: str = "deepseek-chat"
-
-
-class AIReviewConfigRequest(BaseModel):
-    prompt: str | None = None
-    hours: int | None = Field(default=8, ge=1, le=720)
-
-
-class RssSourceRequest(BaseModel):
-    slug: str | None = None
-    display_name: str
-    feed_url: str
-    site_url: str
-    content_kind: str = "article"
-    parser_type: str = "generic"
-    default_limit: int = Field(default=20, ge=1, le=100)
-    default_interval: int = Field(default=240, ge=5, le=10080)
-    enabled: bool = True
-
-
-@router.get("/system/timezone")
+@router.get("/system/timezone", response_model=APIEnvelope[TimezoneData])
 def get_system_timezone(user: str = Depends(get_current_user)):
-    return APIResponse.success(data=system_settings_service.get_timezone())
+    return APIResponse.success(data=app_services.system_settings.get_timezone())
 
 
-@router.post("/system/timezone")
+@router.post("/system/timezone", response_model=APIEnvelope[None])
 def set_system_timezone(config: SystemTimezoneConfig, user: str = Depends(get_current_user)):
-    result = system_settings_service.set_timezone(config.timezone)
+    result = app_services.system_settings.set_timezone(config.timezone)
     return APIResponse.success(message=result["message"])
 
 
-@router.get("/delivery/schedule")
+@router.post("/system/settings", response_model=APIEnvelope[None])
+def set_system_settings(config: SystemSettingsRequest, user: str = Depends(get_current_user)):
+    result = app_services.system_configuration.save(
+        config.timezone,
+        config.automation.model_dump(),
+        config.delivery.news_time,
+        config.delivery.article_time,
+    )
+    return APIResponse.success(message=result["message"])
+
+
+@router.get("/delivery/schedule", response_model=APIEnvelope[DeliveryScheduleData])
 def get_delivery_schedule(user: str = Depends(get_current_user)):
-    return APIResponse.success(data=delivery_settings_service.get_schedule())
+    return APIResponse.success(data=app_services.delivery_settings.get_schedule())
 
 
-@router.post("/delivery/schedule")
+@router.post("/delivery/schedule", response_model=APIEnvelope[None])
 def set_delivery_schedule(config: DeliveryScheduleConfig, user: str = Depends(get_current_user)):
-    result = delivery_settings_service.set_schedule(config.news_time, config.article_time)
+    result = app_services.delivery_settings.set_schedule(config.news_time, config.article_time)
     return APIResponse.success(message=result["message"])
 
 
-@router.get("/config/automation")
+@router.get("/config/automation", response_model=APIEnvelope[AutomationConfigData])
 def get_automation_config(user: str = Depends(get_current_user)):
-    return APIResponse.success(data=automation_settings_service.get_config())
+    return APIResponse.success(data=app_services.automation_settings.get_config())
 
 
-@router.post("/config/automation")
+@router.post("/config/automation", response_model=APIEnvelope[None])
 def set_automation_config(req: AutomationConfigRequest, user: str = Depends(get_current_user)):
-    result = automation_settings_service.set_config(req.model_dump())
+    result = app_services.automation_settings.set_config(req.model_dump())
     return APIResponse.success(message=result["message"])
 
 
-@router.get("/integration/telegram")
+@router.get("/integration/telegram", response_model=APIEnvelope[TelegramConfigData])
 def get_telegram_config(user: str = Depends(get_current_user)):
-    return APIResponse.success(data=telegram_settings_service.get_config())
+    return APIResponse.success(data=app_services.telegram_settings.get_config())
 
 
-@router.post("/integration/telegram")
+@router.post("/integration/telegram", response_model=APIEnvelope[None])
 def set_telegram_config(config: TelegramConfigRequest, user: str = Depends(get_current_user)):
-    return APIResponse.success(message=telegram_settings_service.set_config(config.model_dump())["message"])
+    return APIResponse.success(message=app_services.telegram_settings.set_config(config.model_dump())["message"])
 
 
-@router.get("/integration/ai")
+@router.get("/integration/ai", response_model=APIEnvelope[AIProviderConfigData])
 def get_ai_provider_config(user: str = Depends(get_current_user)):
-    return APIResponse.success(data=ai_provider_settings_service.get_config())
+    return APIResponse.success(data=app_services.ai_provider_settings.get_config())
 
 
-@router.post("/integration/ai")
+@router.post("/integration/ai", response_model=APIEnvelope[None])
 def set_ai_provider_config(config: AIProviderConfigRequest, user: str = Depends(get_current_user)):
-    return APIResponse.success(message=ai_provider_settings_service.set_config(config.model_dump())["message"])
+    return APIResponse.success(message=app_services.ai_provider_settings.set_config(config.model_dump())["message"])
 
 
-@router.get("/review/settings")
-def get_ai_review_config(kind: str = "news", user: str = Depends(get_current_user)):
-    return APIResponse.success(data=review_settings_service.get_config(kind))
+@router.get("/editorial/profiles", response_model=APIEnvelope[EditorialProfilesData])
+def list_editorial_profiles(kind: ContentKind | None = None, user: str = Depends(get_current_user)):
+    return APIResponse.success(data=app_services.editorial_profiles.list_profiles(kind))
 
 
-@router.post("/review/settings")
-def set_ai_review_config(config: AIReviewConfigRequest, kind: str = "news", user: str = Depends(get_current_user)):
-    return APIResponse.success(message=review_settings_service.set_config(config.prompt, config.hours, kind)["message"])
+@router.put("/editorial/profiles/{slug}", response_model=APIEnvelope[EditorialProfileData])
+def save_editorial_profile(slug: str, config: EditorialProfileRequest, user: str = Depends(get_current_user)):
+    payload = config.model_dump()
+    payload["slug"] = slug
+    return APIResponse.success(data=app_services.editorial_profiles.save_profile(payload), message="内容档案已保存")
 
 
-@router.get("/rss/sources")
+@router.get("/review/settings", response_model=APIEnvelope[ReviewSettingsData])
+def get_ai_review_config(kind: ContentKind = "news", user: str = Depends(get_current_user)):
+    return APIResponse.success(data=app_services.review_settings.get_config(kind))
+
+
+@router.post("/review/settings", response_model=APIEnvelope[None])
+def set_ai_review_config(config: AIReviewConfigRequest, kind: ContentKind = "news", user: str = Depends(get_current_user)):
+    return APIResponse.success(message=app_services.review_settings.set_config(config.prompt, config.hours, kind)["message"])
+
+
+@router.get("/rss/sources", response_model=APIEnvelope[RssSourcesData])
 def get_rss_sources(user: str = Depends(get_current_user)):
-    return APIResponse.success(data=rss_source_service.list_sources())
+    return APIResponse.success(data=app_services.rss_sources.list_sources())
 
 
-@router.post("/rss/sources")
+@router.post("/rss/sources", response_model=APIEnvelope[RssSourceData])
 def create_rss_source(config: RssSourceRequest, user: str = Depends(get_current_user)):
-    return APIResponse.success(message="RSS 源已创建", data=rss_source_service.create_source(config.model_dump()))
+    return APIResponse.success(message="RSS 源已创建", data=app_services.rss_sources.create_source(config.model_dump()))
 
 
-@router.put("/rss/sources/{source_id}")
+@router.put("/rss/sources/{source_id}", response_model=APIEnvelope[RssSourceData])
 def update_rss_source(source_id: int, config: RssSourceRequest, user: str = Depends(get_current_user)):
-    return APIResponse.success(message="RSS 源已更新", data=rss_source_service.update_source(source_id, config.model_dump()))
+    return APIResponse.success(message="RSS 源已更新", data=app_services.rss_sources.update_source(source_id, config.model_dump()))
 
 
-@router.delete("/rss/sources/{source_id}")
+@router.delete("/rss/sources/{source_id}", response_model=APIEnvelope[None])
 def delete_rss_source(source_id: int, user: str = Depends(get_current_user)):
-    return APIResponse.success(message=rss_source_service.delete_source(source_id)["message"])
+    return APIResponse.success(message=app_services.rss_sources.delete_source(source_id)["message"])

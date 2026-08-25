@@ -5,6 +5,7 @@ import { Button, Space, Popconfirm } from 'antd';
 import { useArchiveContentTab } from '../../hooks/dashboard/useArchiveContentTab';
 import ContentDataTable from './ContentDataTable';
 import { EXPORT_SCOPE } from '../../contracts/content';
+import { formatLocalDateTime } from '../../utils/time';
 
 const ArchiveTab = ({ spiders, onAddToFeatured, onShowExport, contentKind }) => {
     const listState = useArchiveContentTab(contentKind);
@@ -27,7 +28,7 @@ const ArchiveTab = ({ spiders, onAddToFeatured, onShowExport, contentKind }) => 
             title: '发布时间',
             dataIndex: 'published_at',
             width: 180,
-            render: (text) => new Date(text).toLocaleString(),
+            render: formatLocalDateTime,
         },
         {
             title: '操作',

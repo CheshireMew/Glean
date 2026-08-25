@@ -1,29 +1,30 @@
-import client from './client';
+import { requestOperation } from './operations';
 import { CONTENT_KIND } from '../contracts/content';
 
-export const getSystemTimezone = () => client.get('/system/timezone');
-export const setSystemTimezone = (config) => client.post('/system/timezone', config);
+export const getSystemTimezone = () => requestOperation('getSystemTimezone');
+export const setSystemSettings = (data) => requestOperation('setSystemSettings', { data });
 
-export const getDeliverySchedule = () => client.get('/delivery/schedule');
-export const setDeliverySchedule = (data) => client.post('/delivery/schedule', data);
+export const getDeliverySchedule = () => requestOperation('getDeliverySchedule');
+export const setDeliverySchedule = (data) => requestOperation('setDeliverySchedule', { data });
 
-export const getAutomationConfig = () => client.get('/config/automation');
-export const setAutomationConfig = (config) => client.post('/config/automation', config);
+export const getAutomationConfig = () => requestOperation('getAutomationConfig');
 
-export const getAiProviderConfig = () => client.get('/integration/ai');
-export const setAiProviderConfig = (config) => client.post('/integration/ai', config);
+export const getAiProviderConfig = () => requestOperation('getAiProviderConfig');
+export const setAiProviderConfig = (data) => requestOperation('setAiProviderConfig', { data });
+export const getEditorialProfiles = (kind = null) => requestOperation('getEditorialProfiles', { params: { kind } });
+export const saveEditorialProfile = (profile) => requestOperation('saveEditorialProfile', { path: { slug: profile.slug }, data: profile });
 
-export const getReviewSettings = (kind = CONTENT_KIND.NEWS) => client.get('/review/settings', { params: { kind } });
-export const setReviewSettings = (config, kind = CONTENT_KIND.NEWS) => client.post('/review/settings', config, { params: { kind } });
+export const getReviewSettings = (kind = CONTENT_KIND.NEWS) => requestOperation('getReviewSettings', { params: { kind } });
+export const setReviewSettings = (data, kind = CONTENT_KIND.NEWS) => requestOperation('setReviewSettings', { data, params: { kind } });
 
-export const getBlocklist = (kind = CONTENT_KIND.NEWS) => client.get('/content/blocklist', { params: { kind } });
-export const addBlocklist = (keyword, matchType = 'contains', kind = CONTENT_KIND.NEWS) => client.post('/content/blocklist', { keyword, match_type: matchType, kind });
-export const deleteBlocklist = (id) => client.delete(`/content/blocklist/${id}`);
+export const getBlocklist = (kind = CONTENT_KIND.NEWS) => requestOperation('getBlocklist', { params: { kind } });
+export const addBlocklist = (keyword, matchType = 'contains', kind = CONTENT_KIND.NEWS) => requestOperation('addBlocklist', { data: { keyword, match_type: matchType, kind } });
+export const deleteBlocklist = (id) => requestOperation('deleteBlocklist', { path: { id } });
 
-export const getTelegramConfig = () => client.get('/integration/telegram');
-export const setTelegramConfig = (config) => client.post('/integration/telegram', config);
+export const getTelegramConfig = () => requestOperation('getTelegramConfig');
+export const setTelegramConfig = (data) => requestOperation('setTelegramConfig', { data });
 
-export const getRssSources = () => client.get('/rss/sources');
-export const createRssSource = (config) => client.post('/rss/sources', config);
-export const updateRssSource = (id, config) => client.put(`/rss/sources/${id}`, config);
-export const deleteRssSource = (id) => client.delete(`/rss/sources/${id}`);
+export const getRssSources = (config = {}) => requestOperation('getRssSources', config);
+export const createRssSource = (data) => requestOperation('createRssSource', { data });
+export const updateRssSource = (id, data) => requestOperation('updateRssSource', { path: { id }, data });
+export const deleteRssSource = (id) => requestOperation('deleteRssSource', { path: { id } });

@@ -3,14 +3,17 @@ from __future__ import annotations
 import asyncio
 import random
 import re
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from playwright.async_api import async_playwright, Page
+if TYPE_CHECKING:
+    from playwright.async_api import Page
 
 from .user_agents import get_random_user_agent
 
 
 async def init_browser(scraper, headless: bool = True):
+    from playwright.async_api import async_playwright
+
     scraper.playwright = await async_playwright().start()
     scraper.browser = await scraper.playwright.chromium.launch(
         headless=headless,
@@ -48,12 +51,23 @@ async def init_browser(scraper, headless: bool = True):
 
 
 async def close_browser(scraper):
-    if scraper.page:
-        await scraper.page.close()
-    if scraper.browser:
-        await scraper.browser.close()
+    errors = []
+    for resource in (scraper.page, scraper.browser):
+        if resource:
+            try:
+                await resource.close()
+            except Exception as exc:
+                errors.append(exc)
     if scraper.playwright:
-        await scraper.playwright.stop()
+        try:
+            await scraper.playwright.stop()
+        except Exception as exc:
+            errors.append(exc)
+    scraper.page = None
+    scraper.browser = None
+    scraper.playwright = None
+    if errors:
+        raise RuntimeError("浏览器资源未能完整关闭") from errors[0]
 
 
 async def fetch_page_with_delay(
@@ -62,7 +76,7 @@ async def fetch_page_with_delay(
     delay_range: tuple = (1, 3),
     max_retries: int = 3,
     return_response: bool = False,
-    page: Optional[Page] = None,
+    page: Optional["Page"] = None,
 ):
     target_page = page if page else scraper.page
     mean_delay = sum(delay_range) / 2

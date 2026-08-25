@@ -4,9 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..core.exceptions import NotFoundError
-from ..infrastructure.scraper_impl.rss_feed import RssFeedScraper
-from ..infrastructure.scrapers import scraper_catalog
-from .rss_source_service import rss_runtime_name, rss_source_service
+from .rss_source_service import rss_runtime_name
 
 
 @dataclass(frozen=True)
@@ -18,26 +16,23 @@ class RegisteredScraper:
     default_limit: int
     default_interval: int
     source_type: str
+    transport_kind: str
     build_scraper: Callable[[], object]
+    homepage_url: str | None = None
+    authority_type: str = "media"
+    is_official: bool = False
 
 
 class ScraperRegistryService:
-    def list_definitions(self) -> list[RegisteredScraper]:
-        definitions = [
-            RegisteredScraper(
-                name=definition.name,
-                display_name=definition.display_name(),
-                source_site=definition.source_site(),
-                content_kind=definition.content_kind,
-                default_limit=definition.default_limit,
-                default_interval=definition.default_interval,
-                source_type="site",
-                build_scraper=definition.scraper_cls,
-            )
-            for definition in scraper_catalog.definitions()
-        ]
+    def __init__(self, rss_sources, site_definitions, rss_scraper_factory):
+        self._rss_sources = rss_sources
+        self._site_definitions = tuple(site_definitions)
+        self._rss_scraper_factory = rss_scraper_factory
 
-        for source in rss_source_service.list_enabled_sources():
+    def list_definitions(self) -> list[RegisteredScraper]:
+        definitions = list(self._site_definitions)
+
+        for source in self._rss_sources.list_enabled_sources():
             definitions.append(
                 RegisteredScraper(
                     name=rss_runtime_name(source["slug"]),
@@ -47,7 +42,11 @@ class ScraperRegistryService:
                     default_limit=source["default_limit"],
                     default_interval=source["default_interval"],
                     source_type="rss",
-                    build_scraper=lambda source=source: RssFeedScraper(source),
+                    transport_kind="rss",
+                    build_scraper=lambda source=source: self._rss_scraper_factory(source),
+                    homepage_url=source["site_url"],
+                    authority_type=source.get("authority_type") or "media",
+                    is_official=bool(source.get("is_official")),
                 )
             )
 
@@ -67,6 +66,3 @@ class ScraperRegistryService:
         if not definition:
             raise NotFoundError("爬虫不存在")
         return definition
-
-
-scraper_registry_service = ScraperRegistryService()

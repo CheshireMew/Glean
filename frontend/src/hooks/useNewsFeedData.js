@@ -1,161 +1,156 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { CONTENT_KIND, FEED_TAB, PUBLIC_STREAM } from '../contracts/content';
 import { useNewsFeedUiState } from './newsfeed/useNewsFeedUiState';
 import { usePublicReportFeed } from './newsfeed/usePublicReportFeed';
 import { usePublicSearchResults } from './newsfeed/usePublicSearchResults';
+import { usePublicSiteConfig } from './newsfeed/usePublicSiteConfig';
 import { usePublicStream } from './newsfeed/usePublicStream';
 import { useThemePreference } from './newsfeed/useThemePreference';
 
 const REFRESH_INTERVAL_MS = 60000;
 
-function matchesTitle(item, query) {
-    return !query || item.title.toLowerCase().includes(query.toLowerCase());
-}
-
 export function useNewsFeedData() {
     const ui = useNewsFeedUiState();
     const theme = useThemePreference();
-    const longform = usePublicStream(PUBLIC_STREAM.LONGFORM);
-    const briefs = usePublicStream(PUBLIC_STREAM.BRIEFS);
-    const articleReports = usePublicReportFeed(CONTENT_KIND.ARTICLE);
-    const briefReports = usePublicReportFeed(CONTENT_KIND.NEWS);
-    const search = usePublicSearchResults(ui.debouncedSearchQuery);
-    const {
-        state: longformState,
-        ensureLoaded: ensureLongformLoaded,
-        refresh: refreshLongform,
-        loadMore: loadMoreLongform,
-    } = longform;
-    const {
-        state: briefsState,
-        ensureLoaded: ensureBriefsLoaded,
-        refresh: refreshBriefs,
-        loadMore: loadMoreBriefs,
-    } = briefs;
-    const {
-        state: articleReportState,
-        ensureLoaded: ensureArticleReportsLoaded,
-    } = articleReports;
-    const {
-        state: briefReportState,
-        ensureLoaded: ensureBriefReportsLoaded,
-    } = briefReports;
-    const {
-        state: searchState,
-        enabled: searchEnabled,
-    } = search;
+    const publicSiteConfig = usePublicSiteConfig();
+    const [selectedPublicationSlug, setSelectedPublicationSlug] = useState('');
+    const selectedPublication = (publicSiteConfig.publications || []).find(
+        (item) => item.public_slug === selectedPublicationSlug,
+    ) || null;
+    const channelByKind = useMemo(() => ({
+        [CONTENT_KIND.ARTICLE]: selectedPublication?.content_type === CONTENT_KIND.ARTICLE ? selectedPublication.public_slug : null,
+        [CONTENT_KIND.NEWS]: selectedPublication?.content_type === CONTENT_KIND.NEWS ? selectedPublication.public_slug : null,
+    }), [selectedPublication]);
+    const longform = usePublicStream(PUBLIC_STREAM.LONGFORM, channelByKind[CONTENT_KIND.ARTICLE]);
+    const briefs = usePublicStream(PUBLIC_STREAM.BRIEFS, channelByKind[CONTENT_KIND.NEWS]);
+    const articleReports = usePublicReportFeed(CONTENT_KIND.ARTICLE, ui.debouncedSearchQuery, channelByKind[CONTENT_KIND.ARTICLE]);
+    const briefReports = usePublicReportFeed(CONTENT_KIND.NEWS, ui.debouncedSearchQuery, channelByKind[CONTENT_KIND.NEWS]);
+    const searchChannels = useMemo(() => ({
+        article: channelByKind[CONTENT_KIND.ARTICLE],
+        news: channelByKind[CONTENT_KIND.NEWS],
+    }), [channelByKind]);
+    const search = usePublicSearchResults(ui.debouncedSearchQuery, searchChannels);
+
+    const descriptors = useMemo(() => {
+        const longformState = search.enabled
+            ? {
+                ...search.state.article,
+                items: search.state.articleItems,
+                loading: search.state.loading,
+                error: search.state.error,
+                refreshError: null,
+            }
+            : longform.state;
+        const briefsState = search.enabled
+            ? {
+                ...search.state.brief,
+                items: search.state.briefItems,
+                loading: search.state.loading,
+                error: search.state.error,
+                refreshError: null,
+            }
+            : briefs.state;
+        return {
+            [FEED_TAB.LONGFORM]: {
+                state: longformState,
+                ensureLoaded: longform.ensureLoaded,
+                retry: search.enabled ? search.retry : longform.retry,
+                loadMore: search.enabled
+                    ? () => search.loadMore(CONTENT_KIND.ARTICLE)
+                    : longform.loadMore,
+            },
+            [FEED_TAB.BRIEFS]: {
+                state: briefsState,
+                ensureLoaded: briefs.ensureLoaded,
+                retry: search.enabled ? search.retry : briefs.retry,
+                loadMore: search.enabled
+                    ? () => search.loadMore(CONTENT_KIND.NEWS)
+                    : briefs.loadMore,
+            },
+            [FEED_TAB.ARTICLE_REPORTS]: {
+                state: articleReports.state,
+                ensureLoaded: articleReports.ensureLoaded,
+                retry: articleReports.retry,
+                loadMore: articleReports.loadMore,
+            },
+            [FEED_TAB.BRIEF_REPORTS]: {
+                state: briefReports.state,
+                ensureLoaded: briefReports.ensureLoaded,
+                retry: briefReports.retry,
+                loadMore: briefReports.loadMore,
+            },
+        };
+    }, [articleReports, briefReports, briefs, longform, search]);
+
+    const activeDescriptor = descriptors[ui.activeTab] || descriptors[FEED_TAB.BRIEFS];
+    const longformDescriptor = descriptors[FEED_TAB.LONGFORM];
+    const briefsDescriptor = descriptors[FEED_TAB.BRIEFS];
+    const ensureActiveLoaded = activeDescriptor.ensureLoaded;
+    const ensureBriefsLoaded = briefs.ensureLoaded;
 
     useEffect(() => {
-        const timer = setTimeout(() => {
+        const timer = window.setTimeout(() => {
             void ensureBriefsLoaded();
-            if (ui.activeTab === FEED_TAB.LONGFORM) {
-                void ensureLongformLoaded();
-            }
-            if (ui.activeTab === FEED_TAB.ARTICLE_REPORTS) {
-                void ensureArticleReportsLoaded();
-            }
-            if (ui.activeTab === FEED_TAB.BRIEF_REPORTS) {
-                void ensureBriefReportsLoaded();
+            if (ui.activeTab !== FEED_TAB.BRIEFS) {
+                void ensureActiveLoaded();
             }
         }, 0);
-        return () => clearTimeout(timer);
-    }, [ensureArticleReportsLoaded, ensureBriefReportsLoaded, ensureBriefsLoaded, ensureLongformLoaded, ui.activeTab]);
+        return () => window.clearTimeout(timer);
+    }, [ensureActiveLoaded, ensureBriefsLoaded, ui.activeTab]);
 
     useEffect(() => {
-        const activeStream = ui.activeTab === FEED_TAB.LONGFORM
-            ? { state: longformState, loadMore: loadMoreLongform }
-            : ui.activeTab === FEED_TAB.BRIEFS
-                ? { state: briefsState, loadMore: loadMoreBriefs }
-                : null;
-        if (!activeStream) {
-            return undefined;
-        }
-
         const handleScroll = () => {
-            if (searchEnabled) {
-                return;
-            }
-            const current = activeStream.state;
-            if (!current.loaded || !current.hasMore || current.loadingMore) {
-                return;
-            }
-            const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 500;
-            if (!nearBottom) {
-                return;
-            }
-            void activeStream.loadMore();
+            const current = activeDescriptor.state;
+            if (current.loaded === false || !current.hasMore || current.loadingMore) return;
+            const nearBottom = window.innerHeight + window.scrollY
+                >= document.documentElement.scrollHeight - 500;
+            if (nearBottom) void activeDescriptor.loadMore();
         };
-
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
-    }, [briefsState, loadMoreBriefs, loadMoreLongform, longformState, searchEnabled, ui.activeTab]);
+    }, [activeDescriptor]);
 
     useEffect(() => {
-        const interval = setInterval(() => {
-            if (searchEnabled) {
-                return;
-            }
-            void refreshBriefs();
-            if (longformState.loaded) {
-                void refreshLongform();
-            }
-        }, REFRESH_INTERVAL_MS);
-
-        return () => clearInterval(interval);
-    }, [longformState.loaded, refreshBriefs, refreshLongform, searchEnabled]);
-
-    const searchQuery = ui.debouncedSearchQuery.trim();
-    const visibleLongformItems = useMemo(
-        () => (searchEnabled ? searchState.articleItems : longformState.items),
-        [longformState.items, searchEnabled, searchState.articleItems],
-    );
-    const visibleBriefItems = useMemo(
-        () => (searchEnabled ? searchState.briefItems : briefsState.items),
-        [briefsState.items, searchEnabled, searchState.briefItems],
-    );
-    const filteredArticleReports = useMemo(
-        () => articleReportState.items.filter((item) => matchesTitle(item, searchQuery)),
-        [articleReportState.items, searchQuery],
-    );
-    const filteredBriefReports = useMemo(
-        () => briefReportState.items.filter((item) => matchesTitle(item, searchQuery)),
-        [briefReportState.items, searchQuery],
-    );
-    const currentItems = useMemo(() => {
-        if (ui.activeTab === FEED_TAB.LONGFORM) return visibleLongformItems;
-        if (ui.activeTab === FEED_TAB.ARTICLE_REPORTS) return filteredArticleReports;
-        if (ui.activeTab === FEED_TAB.BRIEF_REPORTS) return filteredBriefReports;
-        if (ui.activeTab === FEED_TAB.BRIEFS) return visibleBriefItems;
-        return [];
-    }, [filteredArticleReports, filteredBriefReports, ui.activeTab, visibleBriefItems, visibleLongformItems]);
-
-    const loading = (
-        (ui.activeTab === FEED_TAB.LONGFORM && (searchEnabled ? searchState.loading : longformState.loading))
-        || (ui.activeTab === FEED_TAB.ARTICLE_REPORTS && articleReportState.loading)
-        || (ui.activeTab === FEED_TAB.BRIEF_REPORTS && briefReportState.loading)
-        || (ui.activeTab === FEED_TAB.BRIEFS && (searchEnabled ? searchState.loading : briefsState.loading))
-    );
-    const loadingMore = searchEnabled
-        ? false
-        : (ui.activeTab === FEED_TAB.LONGFORM ? longformState.loadingMore : ui.activeTab === FEED_TAB.BRIEFS ? briefsState.loadingMore : false);
+        const refreshLoaded = () => {
+            if (document.visibilityState !== 'visible') return;
+            if (search.enabled) return;
+            void briefs.refresh();
+            if (longform.state.loaded) void longform.refresh();
+            if (articleReports.state.loaded) void articleReports.refresh();
+            if (briefReports.state.loaded) void briefReports.refresh();
+        };
+        const interval = window.setInterval(refreshLoaded, REFRESH_INTERVAL_MS);
+        document.addEventListener('visibilitychange', refreshLoaded);
+        return () => {
+            window.clearInterval(interval);
+            document.removeEventListener('visibilitychange', refreshLoaded);
+        };
+    }, [articleReports, briefReports, briefs, longform, search.enabled]);
 
     return {
         state: {
             activeTab: ui.activeTab,
-            loading,
-            loadingMore,
+            loading: activeDescriptor.state.loading,
+            loadingMore: activeDescriptor.state.loadingMore,
             searchQuery: ui.searchQuery,
             selectedReport: ui.selectedReport,
             menuOpen: ui.menuOpen,
             darkMode: theme.darkMode,
-            hasMoreLongform: longformState.hasMore,
-            hasMoreBriefs: briefsState.hasMore,
-            articleReports: filteredArticleReports,
-            briefReports: filteredBriefReports,
-            visibleLongformItems,
-            visibleBriefItems,
-            currentItems,
+            hasMoreLongform: longformDescriptor.state.hasMore,
+            hasMoreBriefs: briefsDescriptor.state.hasMore,
+            briefsLoadingMore: briefsDescriptor.state.loadingMore,
+            hasMoreCurrent: activeDescriptor.state.hasMore,
+            articleReports: articleReports.state.items,
+            briefReports: briefReports.state.items,
+            visibleLongformItems: longformDescriptor.state.items,
+            visibleBriefItems: briefsDescriptor.state.items,
+            currentItems: activeDescriptor.state.items,
+            error: activeDescriptor.state.error,
+            refreshError: activeDescriptor.state.refreshError,
+            publicLinks: publicSiteConfig.links,
+            publications: publicSiteConfig.publications || [],
+            selectedPublicationSlug,
         },
         actions: {
             setActiveTab: ui.setActiveTab,
@@ -163,6 +158,10 @@ export function useNewsFeedData() {
             setSelectedReport: ui.setSelectedReport,
             setMenuOpen: ui.setMenuOpen,
             setDarkMode: theme.setDarkMode,
+            retryCurrent: activeDescriptor.retry,
+            loadMoreCurrent: activeDescriptor.loadMore,
+            loadMoreBriefs: briefsDescriptor.loadMore,
+            setSelectedPublicationSlug,
         },
     };
 }

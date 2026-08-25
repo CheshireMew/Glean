@@ -1,10 +1,11 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Button, Tag } from 'antd';
+import { Button, Popconfirm, Tag } from 'antd';
 
 import { useIncomingContentTab } from '../../hooks/dashboard/useIncomingContentTab';
 import ContentDataTable from './ContentDataTable';
 import { EXPORT_SCOPE } from '../../contracts/content';
+import { formatLocalDateTime } from '../../utils/time';
 
 
 const NewsManagementTab = ({ spiders, onShowExport, contentKind }) => {
@@ -40,18 +41,24 @@ const NewsManagementTab = ({ spiders, onShowExport, contentKind }) => {
             title: '发布时间',
             dataIndex: 'published_at',
             width: 160,
-            render: (text) => {
-                const date = new Date(text);
-                return Number.isNaN(date.getTime()) ? text : date.toLocaleString();
-            }
+            render: formatLocalDateTime,
         },
         {
             title: '操作',
             width: 80,
             render: (_, record) => (
-                <Button type="link" danger size="small" onClick={() => deleteItem(record.id)}>
-                    删除
-                </Button>
+                <Popconfirm
+                    title="确认删除这条采集来源？"
+                    description={record.source_count > 1
+                        ? '这会移除当前来源；同一事件的其他来源和后续处理结果会保留。'
+                        : '如果这是事件的最后一个来源，关联事件、归档和审核结果也会一并删除，且无法恢复。'}
+                    okText="确认删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => deleteItem(record.id)}
+                >
+                    <Button type="link" danger size="small">删除</Button>
+                </Popconfirm>
             )
         }
     ];

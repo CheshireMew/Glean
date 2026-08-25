@@ -4,6 +4,12 @@ import { Card, Col, Select, Button, Tag } from 'antd';
 import { PlayCircleOutlined, PauseCircleOutlined } from '@ant-design/icons';
 
 const { Option } = Select;
+const STATUS_LABELS = {
+    idle: '就绪',
+    queued: '等待运行',
+    running: '运行中',
+    error: '运行失败',
+};
 
 /**
  * 爬虫控制卡片组件
@@ -11,6 +17,7 @@ const { Option } = Select;
  */
 const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, onConfigChange }) => {
     const isRunning = status.status === 'running';
+    const isBusy = status.status === 'queued' || isRunning;
 
     // Optimistic UI: Initialize with props, but allow immediate local input
     // Default to 20 to match backend default configuration
@@ -19,6 +26,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
         if (status.interval) return String(status.interval);
         return "manual"; // Default to manual if undefined
     });
+    const [savingConfig, setSavingConfig] = useState(null);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -53,17 +61,24 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
         }
     };
 
-    const handleConfigUpdate = (key, val) => {
+    const handleConfigUpdate = async (key, val) => {
+        const previousValue = key === 'limit' ? localLimit : localInterval;
         if (key === 'limit') setLocalLimit(val);
         if (key === 'interval') setLocalInterval(val);
-        onConfigChange(name, { [key]: val });
+        setSavingConfig(key);
+        const saved = await onConfigChange(name, { [key]: val });
+        if (!saved) {
+            if (key === 'limit') setLocalLimit(previousValue);
+            if (key === 'interval') setLocalInterval(previousValue);
+        }
+        setSavingConfig(null);
     };
 
     return (
-        <Col span={8}>
+        <Col xs={24} md={12} xl={8}>
             <Card
                 title={displayName}
-                extra={<Tag color={isRunning ? 'processing' : (status.status === 'error' ? 'error' : 'success')}>{status.status || 'Ready'}</Tag>}
+                extra={<Tag color={isRunning ? 'processing' : (status.status === 'error' ? 'error' : 'success')}>{STATUS_LABELS[status.status] || '状态未知'}</Tag>}
             >
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
                     <span style={{ fontSize: 12 }}>限制条数:</span>
@@ -72,6 +87,8 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                         value={localLimit}
                         style={{ width: 80 }}
                         size="small"
+                        loading={savingConfig === 'limit'}
+                        disabled={Boolean(savingConfig)}
                         onChange={(val) => handleConfigUpdate('limit', val)}
                     >
                         <Option value={5}>5</Option>
@@ -88,6 +105,8 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                         value={localInterval}
                         style={{ width: 90 }}
                         size="small"
+                        loading={savingConfig === 'interval'}
+                        disabled={Boolean(savingConfig)}
                         onChange={(val) => handleConfigUpdate('interval', val)}
                     >
                         <Option value="manual">手动</Option>
@@ -113,7 +132,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                         )}
                     </Select>
 
-                    {isRunning ? (
+                    {isBusy ? (
                         <Button
                             type="primary"
                             danger
@@ -128,7 +147,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                             type="primary"
                             size="small"
                             icon={<PlayCircleOutlined />}
-                            loading={isRunning}
+                            loading={isBusy}
                             onClick={() => onRun(name, localLimit)}
                         >
                             运行
@@ -151,7 +170,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                     }}
                 >
                     <div style={{ color: '#8c8c8c', marginBottom: 4, borderBottom: '1px solid #333', paddingBottom: 4 }}>
-                        &gt; CONSOLE OUTPUT
+                        &gt; 运行日志
                     </div>
                     {status.logs && status.logs.length > 0 ? (
                         status.logs.map((log, idx) => (
@@ -159,7 +178,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                         ))
                     ) : (
                         <div style={{ color: '#666', textAlign: 'center', marginTop: 40 }}>
-                            {status.status === 'idle' && status.last_result ? status.last_result : 'WAITING FOR LOGS...'}
+                            {status.status === 'idle' && status.last_result ? status.last_result : '等待运行日志…'}
                         </div>
                     )}
                 </div>

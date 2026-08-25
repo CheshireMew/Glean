@@ -4,7 +4,6 @@ Target: https://www.marsbit.co/
 """
 from .article_base import ArticleScraper
 from typing import List, Dict, Optional
-import asyncio
 from datetime import datetime
 
 class MarsBitArticleScraper(ArticleScraper):
@@ -13,40 +12,12 @@ class MarsBitArticleScraper(ArticleScraper):
     def __init__(self):
         super().__init__('MarsBit Article', 'https://www.marsbit.co/', max_items=20)
         self.base_url = 'https://www.marsbit.co'
-    
-    async def scrape_important_news(self) -> List[Dict]:
-        """抓取最新文章"""
-        all_articles = []
-        
-        try:
-            print(f"\n正在访问: {self.base_url}")
-            await self.fetch_page_with_delay(self.base_url)
-            await asyncio.sleep(3)
-            
-            # 抓取列表文章
-            try:
-                # 等待列表元素加载 .news-list-item
-                await self.page.wait_for_selector('.news-list-item', timeout=10000)
-            except:
-                print("⚠️ 等待列表元素超时")
-
-            all_articles = await self._scrape_list_articles()
-            print(f"📋 抓取到: {len(all_articles)} 篇文章")
-            
-            # 应用限制
-            if len(all_articles) > self.max_items:
-                all_articles = all_articles[:self.max_items]
-        
-        except Exception as e:
-            print(f"❌ 抓取失败: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        return all_articles
+        self.list_url = self.base_url
+        self.list_wait_selector = '.news-list-item'
 
     async def _scrape_list_articles(self) -> List[Dict]:
         """抓取列表文章"""
-        articles = []
+        articles = self.create_result_buffer()
         
         # 查找文章容器
         items = await self.page.query_selector_all('.news-list-item')
@@ -78,7 +49,7 @@ class MarsBitArticleScraper(ArticleScraper):
                     author_elem = await item.query_selector('.author-time a')
                     if author_elem:
                         list_author = await author_elem.text_content()
-                except:
+                except Exception:
                     pass
 
                 # 3. 进入详情页获取正文和准确作者
@@ -111,45 +82,29 @@ class MarsBitArticleScraper(ArticleScraper):
 
     async def _fetch_article_details(self, url: str) -> Optional[Dict]:
         """获取文章详情"""
-        page = await self.browser.new_page()
         try:
-            await self.fetch_page_with_delay(url, page=page)
-            await asyncio.sleep(1)
-            
-            # Author: .news-info .author
-            author = None
-            try:
-                author_elem = await page.query_selector('.news-info .author')
-                if author_elem:
-                    author = await author_elem.text_content()
-            except:
-                pass
-            
-            # Content: .news-synopsis p (用户指定摘要作为内容)
-            content = ""
-            try:
-                # 优先尝试 .news-synopsis
-                synopsis_elem = await page.query_selector('.news-synopsis')
-                if synopsis_elem:
-                    content = await synopsis_elem.inner_text()
-                
-                # 如果没有，尝试找真正的正文 .news-details-content
-                if not content or len(content) < 10:
-                     content_main = await page.query_selector('.news-details-content')
-                     if content_main:
-                         # 移除 info 和 title 部分，只取正文文本？
-                         # 简单起见直接取整个 inner_text，虽然会包含标题和作者，但能保证不漏
-                         content = await content_main.inner_text()
-            except:
-                pass
-            
-            return {
-                'author': author,
-                'content': content
-            }
-            
+            async with self.detail_page(url, load_delay_seconds=1) as page:
+                author = None
+                try:
+                    author_elem = await page.query_selector('.news-info .author')
+                    if author_elem:
+                        author = await author_elem.text_content()
+                except Exception:
+                    pass
+
+                content = ""
+                try:
+                    synopsis_elem = await page.query_selector('.news-synopsis')
+                    if synopsis_elem:
+                        content = await synopsis_elem.inner_text()
+                    if not content or len(content) < 10:
+                        content_main = await page.query_selector('.news-details-content')
+                        if content_main:
+                            content = await content_main.inner_text()
+                except Exception:
+                    pass
+
+                return {'author': author, 'content': content}
         except Exception as e:
             print(f"    ⚠️ 详情页加载失败: {e}")
             return None
-        finally:
-            await page.close()

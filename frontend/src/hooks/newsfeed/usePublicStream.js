@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getPublicContent } from '../../api/content';
 
@@ -9,10 +9,14 @@ function createStreamState() {
     return {
         items: [],
         page: 0,
+        nextCursor: null,
         hasMore: true,
         loading: false,
         loadingMore: false,
         loaded: false,
+        error: null,
+        refreshError: null,
+        revision: null,
     };
 }
 
@@ -21,14 +25,22 @@ function mergeUniqueById(previous, next) {
     return [...previous, ...next.filter((item) => !existingIds.has(item.id))];
 }
 
-export function usePublicStream(stream) {
+export function usePublicStream(stream, publication = null) {
     const [state, setState] = useState(createStreamState);
     const requestRef = useRef(0);
+    const loadMoreInFlightRef = useRef(false);
     const stateRef = useRef(state);
 
     useEffect(() => {
         stateRef.current = state;
     }, [state]);
+
+    useEffect(() => {
+        requestRef.current += 1;
+        const next = createStreamState();
+        stateRef.current = next;
+        setState(next);
+    }, [stream, publication]);
 
     const fetchPage = useCallback(async (nextPage, { append = false, silent = false } = {}) => {
         const requestId = requestRef.current + 1;
@@ -39,11 +51,13 @@ export function usePublicStream(stream) {
                 ...previous,
                 loading: append ? previous.loading : true,
                 loadingMore: append,
+                error: null,
+                refreshError: null,
             }));
         }
 
         try {
-            const response = await getPublicContent(stream, PAGE_LIMIT, (nextPage - 1) * PAGE_LIMIT);
+            const response = await getPublicContent(stream, PAGE_LIMIT, append ? stateRef.current.nextCursor : null, null, publication);
             if (requestRef.current !== requestId) {
                 return;
             }
@@ -52,10 +66,14 @@ export function usePublicStream(stream) {
                 ...previous,
                 items: append ? mergeUniqueById(previous.items, nextItems) : nextItems,
                 page: nextPage,
-                hasMore: nextItems.length === PAGE_LIMIT && nextPage < MAX_PAGES,
+                nextCursor: response.data?.next_cursor || null,
+                hasMore: Boolean(response.data?.next_cursor) && nextPage < MAX_PAGES,
                 loading: false,
                 loadingMore: false,
                 loaded: true,
+                error: null,
+                refreshError: null,
+                revision: response.data?.revision || previous.revision,
             }));
         } catch (error) {
             console.error(`Failed to fetch ${stream}:`, error);
@@ -64,10 +82,11 @@ export function usePublicStream(stream) {
                     ...previous,
                     loading: false,
                     loadingMore: false,
+                    error: error?.message || '公开内容加载失败',
                 }));
             }
         }
-    }, [stream]);
+    }, [publication, stream]);
 
     const ensureLoaded = useCallback(async () => {
         const current = stateRef.current;
@@ -79,39 +98,73 @@ export function usePublicStream(stream) {
 
     const refresh = useCallback(async () => {
         const current = stateRef.current;
-        if (!current.loaded || current.items.length === 0) {
+        if (!current.loaded) {
+            await fetchPage(1, { silent: true });
             return;
         }
-
+        const requestId = requestRef.current + 1;
+        requestRef.current = requestId;
+        const targetSize = Math.max(PAGE_LIMIT, current.items.length);
         try {
-            const response = await getPublicContent(stream, PAGE_LIMIT, 0);
-            const nextItems = response.data?.items || [];
-            const knownIds = new Set(current.items.map((item) => item.id));
-            const freshItems = nextItems.filter((item) => !knownIds.has(item.id));
-            if (freshItems.length === 0) {
+            const response = await getPublicContent(
+                stream,
+                Math.min(MAX_PAGES * PAGE_LIMIT, targetSize),
+                null,
+                current.revision,
+                publication,
+            );
+            if (requestRef.current !== requestId) {
                 return;
             }
+            if (response.data?.not_modified) {
+                setState((previous) => ({ ...previous, refreshError: null }));
+                return;
+            }
+            const snapshot = response.data?.items || [];
+            const nextCursor = response.data?.next_cursor || null;
+            const page = Math.max(1, Math.ceil(snapshot.length / PAGE_LIMIT));
             setState((previous) => ({
                 ...previous,
-                items: mergeUniqueById(freshItems, previous.items),
+                items: snapshot,
+                page,
+                nextCursor,
+                hasMore: Boolean(nextCursor) && page < MAX_PAGES,
+                refreshError: null,
+                revision: response.data?.revision || previous.revision,
             }));
         } catch (error) {
             console.error(`Failed to refresh ${stream}:`, error);
+            if (requestRef.current === requestId) {
+                setState((previous) => ({
+                    ...previous,
+                    refreshError: error?.message || '自动刷新失败',
+                }));
+            }
         }
-    }, [stream]);
+    }, [fetchPage, publication, stream]);
+
+    const retry = useCallback(async () => {
+        await fetchPage(1);
+    }, [fetchPage]);
 
     const loadMore = useCallback(async () => {
         const current = stateRef.current;
-        if (!current.loaded || !current.hasMore || current.loadingMore || current.page >= MAX_PAGES) {
+        if (loadMoreInFlightRef.current || !current.loaded || !current.hasMore || current.loadingMore || current.page >= MAX_PAGES) {
             return;
         }
-        await fetchPage(current.page + 1, { append: true });
+        loadMoreInFlightRef.current = true;
+        try {
+            await fetchPage(current.page + 1, { append: true });
+        } finally {
+            loadMoreInFlightRef.current = false;
+        }
     }, [fetchPage]);
 
-    return {
+    return useMemo(() => ({
         state,
         ensureLoaded,
         refresh,
         loadMore,
-    };
+        retry,
+    }), [ensureLoaded, loadMore, refresh, retry, state]);
 }

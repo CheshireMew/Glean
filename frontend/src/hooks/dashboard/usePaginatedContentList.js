@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { message } from 'antd';
+import { API_RESOURCE, subscribeResource } from '../../api/resources';
 
 function defaultNormalizeResponse(payload, page, pageSize) {
     return {
@@ -27,9 +28,11 @@ export function usePaginatedContentList({
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({ current: 1, pageSize: initialPageSize, total: 0 });
     const [meta, setMeta] = useState(initialMeta);
+    const [loadState, setLoadState] = useState({ loaded: false, error: null, stale: false });
     const [filterSource, setFilterSource] = useState(undefined);
     const [filterKeyword, setFilterKeyword] = useState('');
     const fetchItemsRef = useRef(null);
+    const requestRef = useRef({ id: 0, controller: null });
     const previousActiveRef = useRef(active);
     const stateRef = useRef({
         pagination: { current: 1, pageSize: initialPageSize },
@@ -43,7 +46,12 @@ export function usePaginatedContentList({
         source = filterSource,
         keyword = filterKeyword,
     ) => {
+        requestRef.current.controller?.abort();
+        const requestId = requestRef.current.id + 1;
+        const controller = new AbortController();
+        requestRef.current = { id: requestId, controller };
         setLoading(true);
+        setLoadState((previous) => ({ ...previous, error: null }));
         try {
             const res = await loadPage({
                 page,
@@ -51,17 +59,26 @@ export function usePaginatedContentList({
                 source: enableSourceFilter ? source : undefined,
                 keyword,
                 kind: contentKind,
+                signal: controller.signal,
             });
+            if (requestRef.current.id !== requestId) return;
             const payload = res.data || {};
             const normalized = normalizeResponse(payload, page, pageSize);
             setItems(normalized.items || []);
             setPagination(normalized.pagination || { current: page, pageSize, total: 0 });
             setMeta(normalized.meta ?? initialMeta);
+            setLoadState({ loaded: true, error: null, stale: false });
         } catch (error) {
+            if (error.code === 'ERR_CANCELED' || requestRef.current.id !== requestId) return;
             console.error(errorMessage, error);
             message.error(errorMessage);
+            setLoadState((previous) => ({
+                loaded: previous.loaded,
+                error: error?.message || errorMessage,
+                stale: previous.loaded,
+            }));
         } finally {
-            setLoading(false);
+            if (requestRef.current.id === requestId) setLoading(false);
         }
     }, [contentKind, enableSourceFilter, errorMessage, filterKeyword, filterSource, initialMeta, loadPage, normalizeResponse, pagination.pageSize]);
 
@@ -74,12 +91,28 @@ export function usePaginatedContentList({
         setItems([]);
         setPagination({ current: 1, pageSize: initialPageSize, total: 0 });
         setMeta(initialMeta);
+        setLoadState({ loaded: false, error: null, stale: false });
         previousActiveRef.current = active;
         if (!active) {
             return;
         }
         void fetchItemsRef.current?.(1, initialPageSize, undefined, '');
     }, [active, contentKind, initialMeta, initialPageSize]);
+
+    useEffect(() => () => requestRef.current.controller?.abort(), []);
+
+    useEffect(() => {
+        if (!active) return undefined;
+        return subscribeResource(API_RESOURCE.CONTENT_LISTS, () => {
+            const current = stateRef.current;
+            void fetchItemsRef.current?.(
+                current.pagination.current,
+                current.pagination.pageSize,
+                current.filterSource,
+                current.filterKeyword,
+            );
+        });
+    }, [active]);
 
     useEffect(() => {
         const becameActive = active && !previousActiveRef.current;
@@ -109,6 +142,9 @@ export function usePaginatedContentList({
     return {
         items,
         loading,
+        loaded: loadState.loaded,
+        error: loadState.error,
+        stale: loadState.stale,
         pagination,
         meta,
         filterSource,
@@ -117,5 +153,6 @@ export function usePaginatedContentList({
         setFilterKeyword,
         fetchItems,
         refreshCurrent,
+        retry: refreshCurrent,
     };
 }

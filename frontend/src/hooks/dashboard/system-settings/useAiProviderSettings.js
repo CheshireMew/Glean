@@ -1,58 +1,78 @@
-import { useEffect, useState } from 'react';
-import { message } from 'antd';
-
 import { getAiProviderConfig, setAiProviderConfig } from '../../../api/config';
-import { testDeepSeekConnection } from '../../../api/pipeline';
-import { getRequestErrorMessage } from '../listStateHelpers';
+import { testAiConnection } from '../../../api/pipeline';
+import { useRemoteSettings } from '../../useRemoteSettings';
 
-const MODEL_BASE_URLS = {
-    'deepseek-chat': 'https://api.deepseek.com',
-    'deepseek-reasoner': 'https://api.deepseek.com',
-    'gpt-4o': 'https://api.openai.com/v1',
-    'gpt-4o-mini': 'https://api.openai.com/v1',
-    'claude-3-5-sonnet-20240620': 'https://api.anthropic.com/v1',
+const EMPTY_PROVIDER = { name: 'primary', api_key: '', base_url: '', model: '', input_price_per_million: 0, output_price_per_million: 0 };
+const EMPTY_CONFIG = {
+    providers: [EMPTY_PROVIDER],
+    analysis_concurrency: null,
+    enrichment_concurrency: null,
+    throttle_seconds: null,
 };
 
+const normalizeAiConfig = (response) => ({
+    ...response.data,
+    providers: response.data?.providers?.length ? response.data.providers : [{ ...EMPTY_PROVIDER }],
+});
+const isAiConfig = (config) => Array.isArray(config?.providers);
+
 export function useAiProviderSettings() {
-    const [config, setConfig] = useState({ api_key: '', base_url: 'https://api.deepseek.com', model: 'deepseek-chat' });
+    const remote = useRemoteSettings({
+        initialValue: EMPTY_CONFIG,
+        loadRequest: getAiProviderConfig,
+        normalizeResponse: normalizeAiConfig,
+        isValid: isAiConfig,
+        invalidResponseMessage: '服务器返回的 AI 配置不完整',
+        loadErrorMessage: '无法读取当前 AI 配置',
+        saveRequest: setAiProviderConfig,
+        saveSuccessMessage: 'AI 配置已保存',
+        saveErrorMessage: '保存失败',
+        saveBlockedMessage: '尚未读取到服务器当前配置，不能保存',
+        testRequest: testAiConnection,
+        testSuccessMessage: '连接测试成功',
+        testErrorMessage: '连接测试失败',
+        testBlockedMessage: '尚未读取到服务器当前配置，不能测试连接',
+        scopeId: 'ai-provider',
+    });
 
-    async function loadConfig() {
-        try {
-            const res = await getAiProviderConfig();
-            setConfig(res.data);
-        } catch (error) {
-            console.error('Failed to fetch AI provider config', error);
-        }
-    }
-
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            void loadConfig();
-        }, 0);
-        return () => clearTimeout(timer);
-    }, []);
-
-    const save = async () => {
-        try {
-            await setAiProviderConfig(config);
-            message.success('AI 配置已保存');
-        } catch (error) {
-            message.error(`保存失败: ${getRequestErrorMessage(error, '保存失败')}`);
-        }
+    const updateProvider = (index, field, value) => {
+        remote.setValue((previous) => ({
+            ...previous,
+            providers: previous.providers.map((provider, providerIndex) => (
+                providerIndex === index ? { ...provider, [field]: value } : provider
+            )),
+        }));
     };
 
-    const test = async () => {
-        try {
-            await testDeepSeekConnection();
-            message.success('连接测试成功');
-        } catch (error) {
-            message.error(`连接测试失败: ${getRequestErrorMessage(error, '连接测试失败')}`);
-        }
+    const addProvider = () => {
+        remote.setValue((previous) => ({
+            ...previous,
+            providers: [
+                ...previous.providers,
+                { ...EMPTY_PROVIDER, name: `fallback-${previous.providers.length}` },
+            ],
+        }));
     };
 
-    const handleModelChange = (model) => {
-        setConfig((prev) => ({ ...prev, model, base_url: MODEL_BASE_URLS[model] || prev.base_url }));
+    const removeProvider = (index) => {
+        remote.setValue((previous) => ({
+            ...previous,
+            providers: previous.providers.filter((_, providerIndex) => providerIndex !== index),
+        }));
     };
 
-    return { config, setConfig, save, test, handleModelChange };
+    return {
+        config: remote.value,
+        setConfig: remote.setValue,
+        loadState: remote.loadState,
+        action: remote.action,
+        dirty: remote.dirty,
+        reload: remote.reload,
+        reset: remote.reset,
+        save: remote.save,
+        test: remote.test,
+        updateProvider,
+        addProvider,
+        removeProvider,
+    };
 }

@@ -4,9 +4,7 @@ Target: https://www.panewslab.com/zh/in-depth
 """
 from .article_base import ArticleScraper
 from typing import List, Dict, Optional
-import asyncio
-import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 class PANewsArticleScraper(ArticleScraper):
     """PANews 深度文章爬虫"""
@@ -15,41 +13,13 @@ class PANewsArticleScraper(ArticleScraper):
         super().__init__('PANews Article', 'https://www.panewslab.com', max_items=20)
         self.base_url = 'https://www.panewslab.com'
         self.list_url = 'https://www.panewslab.com/zh/in-depth'
-    
-    async def scrape_important_news(self) -> List[Dict]:
-        """抓取最新文章"""
-        all_articles = []
-        
-        try:
-            print(f"\n正在访问: {self.list_url}")
-            # PANews 可能需要等待网络加载
-            await self.fetch_page_with_delay(self.list_url)
-            await asyncio.sleep(4)
-            
-            # 抓取列表文章
-            try:
-                # 等待列表链接出现
-                await self.page.wait_for_selector('a[href^="/zh/articles/"]', timeout=15000)
-            except:
-                print("⚠️ 等待列表元素超时")
-
-            all_articles = await self._scrape_list_articles()
-            print(f"📋 抓取到: {len(all_articles)} 篇文章")
-            
-            # 应用限制
-            if len(all_articles) > self.max_items:
-                all_articles = all_articles[:self.max_items]
-        
-        except Exception as e:
-            print(f"❌ 抓取失败: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        return all_articles
+        self.list_wait_selector = 'a[href^="/zh/articles/"]'
+        self.list_wait_timeout = 15000
+        self.list_load_delay = 4
 
     async def _scrape_list_articles(self) -> List[Dict]:
         """抓取列表文章"""
-        articles = []
+        articles = self.create_result_buffer()
         
         # 查找所有文章容器（根据用户提供的结构，文章包裹在 space-y-2 的 div 中，或者直接找链接）
         # 这里尝试直接找标题链接，然后向上/同级查找其他元素
@@ -102,7 +72,7 @@ class PANewsArticleScraper(ArticleScraper):
                     if time_elem:
                         time_str = await time_elem.text_content()
                         time_str = time_str.strip()
-                        published_at = self._parse_relative_time(time_str)
+                        published_at = self.parse_relative_time(time_str)
                 
                 # 检查增量抓取
                 if self.should_stop_scraping(title, full_url):
@@ -133,33 +103,6 @@ class PANewsArticleScraper(ArticleScraper):
                 continue
                 
         return articles
-
-    def _parse_relative_time(self, time_str: str) -> str:
-        """解析相对时间，如 '39分钟前', '2小时前'"""
-        now = datetime.now()
-        try:
-            time_str = time_str.replace(' ', '')
-            if '分钟前' in time_str:
-                minutes = int(re.search(r'(\d+)分钟前', time_str).group(1))
-                pub_time = now - timedelta(minutes=minutes)
-                return pub_time.strftime('%Y-%m-%d %H:%M:%S')
-            elif '小时前' in time_str:
-                hours = int(re.search(r'(\d+)小时前', time_str).group(1))
-                pub_time = now - timedelta(hours=hours)
-                return pub_time.strftime('%Y-%m-%d %H:%M:%S')
-            elif '天前' in time_str:
-                days = int(re.search(r'(\d+)天前', time_str).group(1))
-                pub_time = now - timedelta(days=days)
-                return pub_time.strftime('%Y-%m-%d %H:%M:%S')
-            elif '刚刚' in time_str:
-                 return now.strftime('%Y-%m-%d %H:%M:%S')
-            elif re.match(r'\d{4}-\d{2}-\d{2}', time_str):
-                # 已经是日期格式
-                return time_str
-            else:
-                return now.strftime('%Y-%m-%d %H:%M:%S')
-        except:
-             return now.strftime('%Y-%m-%d %H:%M:%S')
 
     async def _fetch_article_details(self, url: str) -> Optional[Dict]:
         """PANews 列表页信息足够，通常不需要进详情页"""

@@ -3,73 +3,323 @@
 @tailwind utilities;
 
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color-scheme: light;
+  color: #111827;
+  background-color: #f3f4f6;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+* {
+  box-sizing: border-box;
 }
 
-a:hover {
-  color: #535bf2;
+html {
+  min-width: 320px;
+  min-height: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: #f3f4f6;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
-/* button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
+#root {
+  min-height: 100vh;
+}
+
+.admin-shell {
+  min-height: 100vh;
+  background: #f1f5f9;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  height: auto;
+  min-height: 72px;
+  padding: 10px clamp(16px, 3vw, 36px);
+  background: linear-gradient(120deg, #0f172a 0%, #172554 58%, #1e3a8a 100%);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 18%);
+}
+
+.admin-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #fff;
+}
+
+.admin-brand-mark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 11px;
+  background: rgb(37 99 235 / 75%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 20%);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.admin-brand h1,
+.admin-brand small {
+  display: block;
+}
+
+.admin-brand h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+}
+
+.admin-brand small {
+  margin-top: 3px;
+  color: #bfdbfe;
+  font-size: 11px;
   font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+  letter-spacing: 0.08em;
+}
+
+.admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-content {
+  padding: clamp(14px, 3vw, 32px);
+}
+
+.admin-loading-note {
+  display: inline-block;
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.admin-stat-card {
+  height: 100%;
+  border-color: #e2e8f0;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 5%);
+}
+
+.admin-panel {
+  width: 100%;
+  min-width: 0;
+  min-height: 280px;
+  overflow: hidden;
+  padding: clamp(12px, 2vw, 24px);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 6%);
+}
+
+.admin-panel .ant-tabs-nav {
+  margin-bottom: 20px;
+}
+
+.admin-panel .ant-tabs-content-holder,
+.admin-panel .ant-tabs-content,
+.admin-panel .ant-tabs-tabpane,
+.admin-data-table,
+.admin-data-table .ant-spin-nested-loading,
+.admin-data-table .ant-spin-container {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-data-table .ant-table-cell {
+  word-break: normal;
+}
+
+.event-group-toggle {
+  display: inline-grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  margin: -6px 2px -6px -8px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: #64748b;
+  background: transparent;
   cursor: pointer;
-  transition: border-color 0.25s;
 }
 
-button:hover {
-  border-color: #646cff;
+.event-group-toggle:hover,
+.event-group-toggle:focus-visible {
+  color: #1d4ed8;
+  background: #dbeafe;
+  outline: none;
 }
 
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-} */
+.event-group-main,
+.event-group-title,
+.event-source-title {
+  min-width: 0;
+}
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+.event-group-title,
+.event-source-title a {
+  overflow-wrap: anywhere;
+}
+
+.event-group-meta,
+.event-source-meta {
+  flex: 0 0 auto;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@media (max-width: 640px) {
+  .admin-header {
+    align-items: stretch;
   }
 
-  a:hover {
-    color: #747bff;
+  .admin-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
-  /* button {
-    background-color: #f9f9f9;
-  } */
+  .admin-content {
+    padding: 12px;
+  }
+
+  .admin-stats .ant-row {
+    row-gap: 10px !important;
+    margin-right: -5px !important;
+    margin-left: -5px !important;
+  }
+
+  .admin-stats .ant-col {
+    padding-right: 5px !important;
+    padding-left: 5px !important;
+  }
+
+  .admin-stat-card .ant-card-body {
+    padding: 12px;
+  }
+
+  .admin-stat-card .ant-statistic-title {
+    min-height: 40px;
+    margin-bottom: 2px;
+    overflow: hidden;
+    color: #475569;
+    line-height: 20px;
+  }
+
+  .admin-stat-card .ant-statistic-content {
+    font-size: 20px;
+  }
+
+  .admin-panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .admin-panel .ant-tabs-nav {
+    margin-bottom: 14px;
+  }
+
+  .admin-panel .ant-btn,
+  .event-group-toggle {
+    min-height: 40px;
+  }
+
+  .export-filter-actions {
+    width: 100%;
+  }
+
+  .event-summary-banner {
+    padding: 10px 12px !important;
+  }
+
+  .event-summary-counts {
+    flex-wrap: wrap;
+    gap: 4px 14px !important;
+  }
+
+  .event-group-header {
+    padding: 12px !important;
+  }
+
+  .event-group-header-row,
+  .event-source-layout {
+    align-items: flex-start !important;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .event-group-main {
+    width: 100%;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .event-group-title {
+    flex-basis: 100%;
+    width: 100%;
+    margin-left: 0 !important;
+    line-height: 1.55;
+  }
+
+  .event-group-meta,
+  .event-source-meta {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px !important;
+  }
+
+  .event-source-row {
+    padding: 12px !important;
+  }
+
+  .event-source-title {
+    width: 100%;
+  }
+
+  .export-items-table .ant-table-cell {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
