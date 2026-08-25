@@ -35,6 +35,9 @@ jobs:
       - name: Install backend dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-dev.lock
 
+      - name: Install release verification browser
+        run: python -m playwright install chromium
+
       - name: Verify backend
         run: |
           python -m compileall -q backend
