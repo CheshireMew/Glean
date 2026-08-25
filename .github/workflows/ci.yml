@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 20
     env:
       AINEWS_ENV: test
-      JWT_SECRET_KEY: ci-only-secret
+      JWT_SECRET_KEY: ci-only-secret-at-least-32-bytes-long
       ADMIN_USERNAME: ci-admin
       ADMIN_PASSWORD: ci-password
       npm_config_cache: D:\Tools\npm-cache

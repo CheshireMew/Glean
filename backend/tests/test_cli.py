@@ -4,6 +4,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -754,9 +755,11 @@ class CLITest(unittest.TestCase):
 
     def test_python_module_entrypoint_runs_in_a_clean_process(self):
         root = Path(__file__).resolve().parents[2]
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "cp1252"
         result = subprocess.run(
             [
-                r"D:\Tools\Python310\python.exe",
+                sys.executable,
                 "-m",
                 "backend.cli",
                 "--env",
@@ -765,7 +768,8 @@ class CLITest(unittest.TestCase):
             ],
             cwd=root,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            env=env,
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

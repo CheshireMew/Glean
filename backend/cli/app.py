@@ -166,13 +166,24 @@ def _text_output(envelope: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _stream_safe_text(stream, value: str) -> str:
+    encoding = getattr(stream, "encoding", None)
+    if not encoding:
+        return value
+    try:
+        value.encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        return value.encode(encoding, errors="backslashreplace").decode(encoding)
+    return value
+
+
 def _emit(stream, envelope: CLIEnvelope, output_format: str, pretty: bool) -> None:
     payload = envelope.model_dump(mode="python")
     if output_format == "text":
-        stream.write(_text_output(payload) + "\n")
+        stream.write(_stream_safe_text(stream, _text_output(payload) + "\n"))
         stream.flush()
         return
-    stream.write(
+    output = (
         json.dumps(
             payload,
             ensure_ascii=False,
@@ -182,6 +193,7 @@ def _emit(stream, envelope: CLIEnvelope, output_format: str, pretty: bool) -> No
         )
         + "\n"
     )
+    stream.write(_stream_safe_text(stream, output))
     stream.flush()
 
 
