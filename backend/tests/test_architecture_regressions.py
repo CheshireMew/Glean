@@ -407,7 +407,9 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
             conn.close()
 
     async def test_api_contracts_and_command_http_semantics(self):
-        token = AuthService(repositories().config).create_access_token({"sub": "admin"})
+        token = AuthService(repositories().config).create_access_token(
+            {"sub": settings.ADMIN_USERNAME}
+        )
         headers = {"Authorization": f"Bearer {token}"}
         repositories().runtime_leases.acquire(
             "worker",
@@ -483,7 +485,9 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app_services.ai_provider_settings.get_config(include_secrets=True), ai_before)
         self.assertEqual(app_services.telegram_settings.get_config(), telegram_before)
 
-        token = AuthService(repositories().config).create_access_token({"sub": "admin"})
+        token = AuthService(repositories().config).create_access_token(
+            {"sub": settings.ADMIN_USERNAME}
+        )
         headers = {"Authorization": f"Bearer {token}"}
         with (
             patch.object(app_services.ai_pipeline, "test_ai_connection", AsyncMock(return_value={"ok": True, "message": "连接成功"})) as ai_test,
@@ -549,7 +553,9 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
                     )
 
     async def test_read_endpoints_serialize_through_their_declared_dtos(self):
-        token = AuthService(repositories().config).create_access_token({"sub": "admin"})
+        token = AuthService(repositories().config).create_access_token(
+            {"sub": settings.ADMIN_USERNAME}
+        )
         headers = {"Authorization": f"Bearer {token}"}
         protected_requests = (
             ("/api/system/timezone", {}),
