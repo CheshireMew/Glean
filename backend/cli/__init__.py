@@ -1,4 +1,4 @@
-"""Local, machine-readable administration CLI for AINews."""
+"""Local, machine-readable administration CLI for Glean."""
 
 CLI_CONTRACT_VERSION = 1
 

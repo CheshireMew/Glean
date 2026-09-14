@@ -1,1 +1,1 @@
-"""AINews backend package."""
+"""Glean backend package."""

@@ -138,7 +138,7 @@ class PublicationChannelGateway:
             raise NotFoundError("投递渠道不存在")
         result = await self.send_message_result(
             channel["slug"],
-            "🔔 <b>AINews 渠道测试</b>\n这是一条测试消息。",
+            "🔔 <b>Glean 渠道测试</b>\n这是一条测试消息。",
         )
         return {"channel_id": channel_id, "channel_slug": channel["slug"], **result}
 
@@ -155,6 +155,7 @@ class PublicationChannelGateway:
             payload = {"text": plain}
         else:
             payload = {
+                # Existing consumers rely on this stable Webhook event type.
                 "event": "ainews.publication",
                 "message_id": uuid.uuid4().hex,
                 "text": plain,
@@ -190,7 +191,7 @@ class PublicationChannelGateway:
 
         def send_sync() -> str | None:
             message = EmailMessage()
-            message["Subject"] = str(config.get("subject") or "AINews 内容更新")
+            message["Subject"] = str(config.get("subject") or "Glean 内容更新")
             message["From"] = str(config["from_address"])
             message["To"] = ", ".join(recipients)
             message.set_content(_plain_text(text))

@@ -159,7 +159,7 @@ class IntelligenceExtensionsTest(unittest.IsolatedAsyncioTestCase):
                 "template": {
                     "title_prefix": "【内参】",
                     "intro": "今天的重点如下 <请核对>",
-                    "footer": "AINews 编辑部",
+                    "footer": "Glean 编辑部",
                 },
                 "targets": [{"channel_id": channel["id"], "delivery_mode": "digest", "enabled": True}],
             },
@@ -189,7 +189,7 @@ class IntelligenceExtensionsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reports["items"][0]["draft_id"], draft["id"])
         self.assertEqual(reports["items"][0]["title"], "【内参】测试发布")
         self.assertIn("今天的重点如下 &lt;请核对&gt;", reports["items"][0]["content"])
-        self.assertIn("AINews 编辑部", reports["items"][0]["content"])
+        self.assertIn("Glean 编辑部", reports["items"][0]["content"])
         review = repositories().editorial_workbench.get_entry(self.ids["review"])
         self.assertEqual(review["delivery_status"], "sent")
         operation = repositories().delivery_operations.get_operation(result["operations"][0]["operation_key"])

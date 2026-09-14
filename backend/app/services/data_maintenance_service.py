@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from logging import getLogger
 
-logger = getLogger("ainews.maintenance")
+logger = getLogger("glean.maintenance")
 
 
 class DataMaintenanceService:

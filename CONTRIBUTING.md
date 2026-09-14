@@ -1,6 +1,6 @@
-# Contributing to AINews
+# Contributing to Glean
 
-感谢你考虑为 AINews 做出贡献！我们欢迎任何形式的贡献，包括但不限于：
+感谢你考虑为 Glean 做出贡献！我们欢迎任何形式的贡献，包括但不限于：
 
 - 🐛 报告Bug
 - 💡 提出新功能建议
@@ -61,7 +61,7 @@
 
 ```powershell
 # 从维护者提供的真实代码来源取得项目后进入目录
-Set-Location E:\Code\AINEWS
+Set-Location E:\Code\Glean
 
 python -m pip install -r requirements-dev.lock
 python -m playwright install chromium

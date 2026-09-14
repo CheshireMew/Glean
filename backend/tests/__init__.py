@@ -1,1 +1,1 @@
-"""AINews integration tests."""
+"""Glean integration tests."""

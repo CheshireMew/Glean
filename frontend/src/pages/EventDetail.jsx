@@ -64,7 +64,7 @@ export default function EventDetail() {
         <div className="min-h-screen bg-slate-50 text-slate-900">
             <header className="border-b border-slate-200 bg-white">
                 <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-4">
-                    <Link to="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600"><ArrowLeft />返回 AINews</Link>
+                    <Link to="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-blue-600"><ArrowLeft />返回 Glean</Link>
                     <span className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">可验证事件</span>
                 </div>
             </header>

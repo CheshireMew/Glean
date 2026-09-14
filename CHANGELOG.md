@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+### Changed
+
+- 项目更名为 Glean，更新公开页面、后台、API、RSS、通知、导出文件名和文档
+- 新增 `glean.ps1` 主入口和 `GLEAN_ENV`，保留旧 CLI、环境变量、数据库及 Webhook 和浏览器存储标识兼容
+
 ### Added
 
 - 事件结构化关键事实、关联事件、公开证据展示和编辑入口

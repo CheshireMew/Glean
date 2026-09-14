@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { message } from 'antd';
 
 
+// Keep existing saved drafts accessible after the Glean rename.
 const storageKey = (contentKind) => `ainews.output-draft.${contentKind}`;
 const EMPTY_DRAFT = [];
 

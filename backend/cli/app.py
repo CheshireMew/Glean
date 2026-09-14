@@ -31,7 +31,7 @@ def _source_version() -> str:
 
 
 def _environment() -> str:
-    return (os.getenv("AINEWS_ENV") or os.getenv("ENV") or "development").strip().lower()
+    return (os.getenv("GLEAN_ENV") or os.getenv("AINEWS_ENV") or os.getenv("ENV") or "development").strip().lower()
 
 
 def _json_default(value: Any):
@@ -77,14 +77,14 @@ def _preflight_database(ctx: CommandContext) -> None:
     path = Path(database.db_path)
     if not path.exists():
         raise CLIUnavailableError(
-            "数据库尚未初始化，请先运行 .\\ainews.ps1 system init",
+            "数据库尚未初始化，请先运行 .\\glean.ps1 system init",
             details={"database_path": str(path.resolve())},
         )
     try:
         database.assert_schema_current()
     except Exception as exc:
         raise CLIUnavailableError(
-            "数据库结构尚未就绪，请先运行 .\\ainews.ps1 system init",
+            "数据库结构尚未就绪，请先运行 .\\glean.ps1 system init",
             details={"database_path": str(path.resolve()), "reason": str(exc)},
         ) from exc
 
@@ -210,7 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         args = parser.parse_args(list(argv) if argv is not None else None)
         if getattr(args, "env", None):
-            os.environ["AINEWS_ENV"] = args.env
+            os.environ["GLEAN_ENV"] = args.env
         spec = getattr(args, "_command_spec", None)
         if spec is None:
             raise CLIUsageError("缺少命令；使用 --help 查看可用命令")

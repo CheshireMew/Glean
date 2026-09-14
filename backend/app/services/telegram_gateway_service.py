@@ -56,7 +56,7 @@ class TelegramGatewayService:
     async def send_test_message(self, config: dict | None = None) -> dict:
         bot = self.require_bot(config)
         success = await bot.send_message(
-            "🔔 <b>AINews</b>\n这是一条测试消息。",
+            "🔔 <b>Glean</b>\n这是一条测试消息。",
             parse_mode="HTML",
         )
         if not success:

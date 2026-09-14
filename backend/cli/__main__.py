@@ -10,7 +10,7 @@ def _bootstrap_environment(argv: list[str]) -> None:
     except ValueError:
         return
     if index + 1 < len(argv):
-        os.environ["AINEWS_ENV"] = argv[index + 1]
+        os.environ["GLEAN_ENV"] = argv[index + 1]
 
 
 def main() -> int:

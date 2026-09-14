@@ -48,8 +48,8 @@ def status_handler(ctx, args, payload):
         "pipeline": {"ready": pipeline_ready, **pipeline_payload},
     }
     if not api_ready or (args.pipeline and not pipeline_ready):
-        raise CLIUnavailableError("AINews 尚未就绪", data=data)
-    return CommandResult(data=data, message="AINews 状态查询成功")
+        raise CLIUnavailableError("Glean 尚未就绪", data=data)
+    return CommandResult(data=data, message="Glean 状态查询成功")
 
 
 def init_handler(ctx, args, payload):

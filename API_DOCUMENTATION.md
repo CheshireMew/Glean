@@ -1,4 +1,4 @@
-# AINews API 概览
+# Glean API 概览
 
 API 默认运行在 `http://localhost:8000`，业务路由统一使用 `/api` 前缀。后台接口使用登录获得的 Bearer Token；公开接口不需要登录。
 
@@ -102,6 +102,6 @@ API 默认运行在 `http://localhost:8000`，业务路由统一使用 `/api` �
 - `GET/POST/PUT /api/integration/analyst/subscriptions`
 - `POST /api/integration/analyst/subscriptions/deliver`
 
-分析师读取还包括 `GET /api/analyst/events`、`events/{id}`、`entities`、`narratives`、`tags` 和 `delta`。变更订阅只接受已经配置的 Webhook 渠道，发送体的 `event` 固定为 `ainews.analyst.changes`，包含订阅信息、`from/to/has_more` 游标和变更数组。服务端通过持久化交付状态机发送；只有确认 2xx 后才推进订阅游标。
+分析师读取还包括 `GET /api/analyst/events`、`events/{id}`、`entities`、`narratives`、`tags` 和 `delta`。变更订阅只接受已经配置的 Webhook 渠道，发送体的 `event` 固定为 `ainews.analyst.changes`（Glean 保留的兼容协议标识），包含订阅信息、`from/to/has_more` 游标和变更数组。服务端通过持久化交付状态机发送；只有确认 2xx 后才推进订阅游标。
 
 除流式导出和 RSS 外，`/api` 响应统一包含 `success / data / message / code / timestamp`，分页信息位于 `pagination`，失败详情位于 `error`。完整请求模型和响应结构以 FastAPI 生成的 `/docs` 为准。

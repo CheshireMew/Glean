@@ -1,11 +1,4 @@
+# Compatibility entry point for existing scripts. Use glean.ps1 for new integrations.
 $ErrorActionPreference = 'Stop'
-Set-Location -LiteralPath $PSScriptRoot
-
-$python = if (Test-Path -LiteralPath 'D:\Tools\Python310\python.exe') {
-    'D:\Tools\Python310\python.exe'
-} else {
-    'python'
-}
-
-& $python -m backend.cli @args
+& (Join-Path $PSScriptRoot 'glean.ps1') @args
 exit $LASTEXITCODE

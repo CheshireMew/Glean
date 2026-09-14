@@ -1,8 +1,10 @@
-# AINews
+# Glean
 
-基于 FastAPI、React 和 SQLite 的加密新闻情报与发布系统。系统负责采集多来源内容，将不同报道聚合为可追溯事件，经过黑名单、分档案 AI 审核、人工编辑和引用受限的内容补充后，编排为独立发布频道，并投递到 Telegram、邮件、Discord、Slack、Webhook、公开前台和 RSS。
+[GitHub](https://github.com/CheshireMew/Glean) · 原名 AINEWS。
 
-当前源码版本以根目录 [`VERSION`](VERSION) 为唯一来源。后端健康接口、前端 `index.html` 的 `ainews-version` 元数据和 `dist/release-manifest.json` 必须显示同一版本；环境变量 `APP_VERSION` 只用于明确覆盖，不能再用 `unreleased` 启动生产环境。
+基于 FastAPI、React 和 SQLite 的信息筛选、事件追踪与发布系统，当前内置来源以加密行业为主。系统负责采集多来源内容，将不同报道聚合为可追溯事件，经过黑名单、分档案 AI 审核、人工编辑和引用受限的内容补充后，编排为独立发布频道，并投递到 Telegram、邮件、Discord、Slack、Webhook、公开前台和 RSS。
+
+当前源码版本以根目录 [`VERSION`](VERSION) 为唯一来源。后端健康接口、前端 `index.html` 的 `glean-version` 元数据和 `dist/release-manifest.json` 必须显示同一版本；环境变量 `APP_VERSION` 只用于明确覆盖，不能再用 `unreleased` 启动生产环境。
 
 ## 当前架构
 
@@ -34,7 +36,7 @@
 ## 目录概览
 
 ```text
-AINEWS/
+Glean/
 ├── backend/
 │   ├── main.py
 │   ├── worker.py
@@ -69,7 +71,7 @@ AINEWS/
 ### 安装
 
 ```powershell
-Set-Location E:\Code\AINEWS
+Set-Location E:\Code\Glean
 python -m pip install -r requirements-dev.lock
 python -m playwright install chromium
 
@@ -88,7 +90,7 @@ Copy-Item .env.example .env.development
 
 环境变量只负责进程级配置：
 
-- `ENV` / `AINEWS_ENV`
+- `GLEAN_ENV` / `AINEWS_ENV`（兼容旧配置）/ `ENV`，按此顺序取首个非空值
 - `APP_VERSION`
 - `ALLOWED_ORIGINS`
 - `JWT_SECRET_KEY`
@@ -129,22 +131,28 @@ API 与 worker 不能合并成一个进程。worker 使用数据库租约阻止�
 
 ```powershell
 # 不访问数据库
-.\ainews.ps1 version
-.\ainews.ps1 capabilities
+.\glean.ps1 version
+.\glean.ps1 capabilities
 
 # 首次使用时显式创建或迁移数据库
-.\ainews.ps1 system init
+.\glean.ps1 system init
 
 # 查询内容与流水线状态
-.\ainews.ps1 system status --pipeline
-.\ainews.ps1 content overview --kind news
-.\ainews.ps1 content list --scope selected --kind news --limit 20
+.\glean.ps1 system status --pipeline
+.\glean.ps1 content overview --kind news
+.\glean.ps1 content list --scope selected --kind news --limit 20
 
 # 复杂配置从 UTF-8 JSON 文件或 stdin 传入
-'{"timezone":"UTC"}' | .\ainews.ps1 config timezone set --input -
+'{"timezone":"UTC"}' | .\glean.ps1 config timezone set --input -
 ```
 
-默认 stdout 是单个 JSON 文档，业务日志只写入 stderr；调用方应同时检查 `success` 和进程退出码。删除、数据库维护、完整流水线和 Telegram 发送等高影响操作必须显式传入 `--yes`。完整命令、输入 Schema、退出码和 Agent 调用规则见 [`CLI_DOCUMENTATION.md`](CLI_DOCUMENTATION.md)，也可运行 `.\ainews.ps1 capabilities <command-id>` 获取机器可读描述。
+默认 stdout 是单个 JSON 文档，业务日志只写入 stderr；调用方应同时检查 `success` 和进程退出码。删除、数据库维护、完整流水线和 Telegram 发送等高影响操作必须显式传入 `--yes`。完整命令、输入 Schema、退出码和 Agent 调用规则见 [`CLI_DOCUMENTATION.md`](CLI_DOCUMENTATION.md)，也可运行 `.\glean.ps1 capabilities <command-id>` 获取机器可读描述。
+
+## 改名兼容
+
+项目现名为 Glean，新命令入口为 `glean.ps1`，原 `ainews.ps1` 继续转发到同一入口。环境选择优先读取 `GLEAN_ENV`，仍支持 `AINEWS_ENV` 和 `ENV`。
+
+数据库文件仍使用 `ainews.db`；浏览器草稿和发送恢复记录沿用原存储键；Webhook 事件类型保留 `ainews.publication` 和 `ainews.analyst.changes`。这些是已有数据与接入协议的兼容标识，改名不要求搬迁数据库或重配订阅。已有部署目录和服务名可继续使用，部署文档中的 Glean 路径用于新部署。
 
 ## 后台数据流
 

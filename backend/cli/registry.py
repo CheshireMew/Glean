@@ -83,8 +83,8 @@ def load_command_specs() -> list[CommandSpec]:
 
 def build_parser(specs: Sequence[CommandSpec]) -> CLIArgumentParser:
     parser = CLIArgumentParser(
-        prog="ainews",
-        description="AINews 本机管理 CLI；默认输出适合 Agent 解析的 JSON。",
+        prog="glean",
+        description="Glean 本机管理 CLI；默认输出适合 Agent 解析的 JSON。",
     )
     parser.add_argument("--env", choices=("development", "production", "test"), help="运行环境")
     parser.add_argument("--format", choices=("json", "text"), default="json", help="输出格式")

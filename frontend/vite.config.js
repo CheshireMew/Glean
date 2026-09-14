@@ -9,11 +9,11 @@ const appVersion = readFileSync(path.resolve(rootDir, '../VERSION'), 'utf8').tri
 
 function versionMetaPlugin() {
   return {
-    name: 'ainews-version-meta',
+    name: 'glean-version-meta',
     transformIndexHtml() {
       return [{
         tag: 'meta',
-        attrs: { name: 'ainews-version', content: appVersion },
+        attrs: { name: 'glean-version', content: appVersion },
         injectTo: 'head',
       }]
     },

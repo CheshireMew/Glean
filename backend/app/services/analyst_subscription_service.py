@@ -125,6 +125,7 @@ class AnalystSubscriptionService:
                     results.append({"subscription_id": subscription["id"], "status": "filtered", "cursor": scanned_cursor, "has_more": has_more})
                     continue
                 payload = {
+                    # Existing consumers rely on this stable Webhook event type.
                     "event": "ainews.analyst.changes",
                     "schema_version": 1,
                     "subscription": {"id": subscription["id"], "name": subscription["name"]},

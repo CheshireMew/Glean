@@ -1,6 +1,6 @@
-# AINEWS 部署指南 (Target: new.blacknico.com)
+# Glean 部署指南 (Target: new.blacknico.com)
 
-本指南专门针对将 AINEWS 部署到服务器并使用域名 `new.blacknico.com` 的场景。
+本指南专门针对将 Glean 部署到服务器并使用域名 `new.blacknico.com` 的场景。
 
 ## 🎯 目标架构
 
@@ -57,24 +57,24 @@ sudo apt install -y nodejs
 
 ## 📦 3. 后端部署
 
-建议将项目代码放在 `/var/www/ainews` 目录。
+建议将项目代码放在 `/var/www/glean` 目录。
 
 1. **拉取代码 (首次部署)**:
 
    ```bash
    # 创建目录
-   sudo mkdir -p /var/www/ainews
+   sudo mkdir -p /var/www/glean
    # 设置权限（将 current_user 替换为您的用户名，如 ubuntu）
-   sudo chown -R $USER:$USER /var/www/ainews
+   sudo chown -R $USER:$USER /var/www/glean
 
    # 克隆代码
-   git clone <您的GitHub仓库地址> /var/www/ainews
+   git clone https://github.com/CheshireMew/Glean.git /var/www/glean
 
    # 💡 私有仓库提示：
    # 如果是私有仓库，推荐使用 Personal Access Token (PAT) 拉取：
-   # git clone https://<your_token>@github.com/<username>/<repo>.git /var/www/ainews
+   # git clone https://<your_token>@github.com/<username>/<repo>.git /var/www/glean
 
-   cd /var/www/ainews
+   cd /var/www/glean
    ```
 
    _(如果是后续更新代码，只需在目录内执行 `git pull origin main`)_
@@ -82,7 +82,7 @@ sudo apt install -y nodejs
 2. **设置 Python 环境**:
 
    ```bash
-   cd /var/www/ainews
+   cd /var/www/glean
    python3 -m venv venv
    source venv/bin/activate
 
@@ -103,20 +103,20 @@ sudo apt install -y nodejs
    - 即使程序意外崩溃或服务器重启，它也会 **自动重启**。
 
    创建服务文件：
-   `sudo nano /etc/systemd/system/ainews-backend.service`
+   `sudo nano /etc/systemd/system/glean-backend.service`
 
    ```ini
    [Unit]
-   Description=AINEWS Backend Service
+   Description=Glean Backend Service
    After=network.target
 
    [Service]
    User=root
    # 如果不是root用户，请修改为实际用户
-   WorkingDirectory=/var/www/ainews
-   Environment="AINEWS_ENV=production"
-   Environment="PATH=/var/www/ainews/venv/bin:/usr/local/bin:/usr/bin:/bin"
-   ExecStart=/var/www/ainews/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips '*'
+   WorkingDirectory=/var/www/glean
+   Environment="GLEAN_ENV=production"
+   Environment="PATH=/var/www/glean/venv/bin:/usr/local/bin:/usr/bin:/bin"
+   ExecStart=/var/www/glean/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips '*'
    Restart=always
 
    [Install]
@@ -127,24 +127,24 @@ sudo apt install -y nodejs
 
    ```bash
    sudo systemctl daemon-reload
-   sudo systemctl enable ainews-backend
-   sudo systemctl start ainews-backend
-   sudo systemctl status ainews-backend
+   sudo systemctl enable glean-backend
+   sudo systemctl start glean-backend
+   sudo systemctl status glean-backend
    ```
 
-   API 进程不会执行采集和自动流水线，还需要单独运行 worker。创建 `/etc/systemd/system/ainews-worker.service`：
+   API 进程不会执行采集和自动流水线，还需要单独运行 worker。创建 `/etc/systemd/system/glean-worker.service`：
 
    ```ini
    [Unit]
-   Description=AINEWS Worker
-   After=network.target ainews-backend.service
+   Description=Glean Worker
+   After=network.target glean-backend.service
 
    [Service]
    User=root
-   WorkingDirectory=/var/www/ainews
-   Environment="AINEWS_ENV=production"
-   Environment="PATH=/var/www/ainews/venv/bin:/usr/local/bin:/usr/bin:/bin"
-   ExecStart=/var/www/ainews/venv/bin/python -m backend.worker
+   WorkingDirectory=/var/www/glean
+   Environment="GLEAN_ENV=production"
+   Environment="PATH=/var/www/glean/venv/bin:/usr/local/bin:/usr/bin:/bin"
+   ExecStart=/var/www/glean/venv/bin/python -m backend.worker
    Restart=always
 
    [Install]
@@ -153,9 +153,9 @@ sudo apt install -y nodejs
 
    ```bash
    sudo systemctl daemon-reload
-   sudo systemctl enable ainews-worker
-   sudo systemctl start ainews-worker
-   sudo systemctl status ainews-worker
+   sudo systemctl enable glean-worker
+   sudo systemctl start glean-worker
+   sudo systemctl status glean-worker
    ```
 
    生产版本默认读取源码根目录 `VERSION`；只有需要明确覆盖时才设置 `APP_VERSION`，且覆盖值必须与本次发布清单一致。`.env.production` 还要配置 32 字符以上的 `JWT_SECRET_KEY`、管理员账号密码、`PUBLIC_SITE_URL=https://new.blacknico.com`，以及不包含 localhost 的 `ALLOWED_ORIGINS=https://new.blacknico.com`。生产配置不完整时 API 会拒绝启动。worker 使用数据库租约阻止两个实例同时运行。
@@ -170,14 +170,14 @@ sudo apt install -y nodejs
 
 ```bash
 # 服务器：保留旧静态文件作为回退证据，不原地混合
-mv /var/www/ainews/frontend/dist /var/www/ainews/archive/frontend-dist-before-0.1.0
-mkdir -p /var/www/ainews/frontend/dist
+mv /var/www/glean/frontend/dist /var/www/glean/archive/frontend-dist-before-0.1.0
+mkdir -p /var/www/glean/frontend/dist
 
 # 本地：上传清单内的完整新目录
-# scp -r frontend/dist/* user@your-server:/var/www/ainews/frontend/dist/
+# scp -r frontend/dist/* user@your-server:/var/www/glean/frontend/dist/
 
 # 服务器源码目录：再次核对文件集合与哈希
-cd /var/www/ainews/frontend
+cd /var/www/glean/frontend
 npm run verify:release
 ```
 
@@ -195,7 +195,7 @@ npm run verify:release
        server_name new.blacknico.com;
 
        # 前端静态文件根目录
-       root /var/www/ainews/frontend/dist;
+       root /var/www/glean/frontend/dist;
        index index.html;
 
        gzip on;
@@ -253,13 +253,13 @@ npm run verify:release
 - 应该看到新闻列表页面。
 - 只有登录状态下访问 `https://new.blacknico.com/admin` 才能看到管理仪表盘（否则跳转登录页）。
 - 检查网络请求（F12 -> Network），确认 API 请求指向 `https://new.blacknico.com/api/...` 且状态为 200。
-- 检查 `/health/live`、`/health/ready` 和 `/health/pipeline` 返回的 `version`，并确认它与页面 `ainews-version` 元数据及 `release-manifest.json` 的 `app_version` 完全一致。
+- 检查 `/health/live`、`/health/ready` 和 `/health/pipeline` 返回的 `version`，并确认它与页面 `glean-version` 元数据及 `release-manifest.json` 的 `app_version` 完全一致。
 
 ---
 
-# AINEWS 项目下线方案 (Decommissioning Plan)
+# Glean 项目下线方案 (Decommissioning Plan)
 
-本方案旨在安全地将 AINEWS 项目从您的 VPS 服务器上下线，停止其运行并防止外界访问。
+本方案旨在安全地将 Glean 项目从您的 VPS 服务器上下线，停止其运行并防止外界访问。
 
 ## 问题背景与原因
 
@@ -284,10 +284,10 @@ npm run verify:release
 首先停止正在运行的 Python 后端程序。
 
 ```bash
-sudo systemctl stop ainews-backend
-sudo systemctl disable ainews-backend
-sudo systemctl stop ainews-worker
-sudo systemctl disable ainews-worker
+sudo systemctl stop glean-backend
+sudo systemctl disable glean-backend
+sudo systemctl stop glean-worker
+sudo systemctl disable glean-worker
 ```
 
 ### 2. 下线 Nginx 站点配置
@@ -308,7 +308,7 @@ sudo systemctl reload nginx
 
 ```bash
 # 复制数据库到用户主目录
-cp /var/www/ainews/ainews.db ~/ainews_backup_$(date +%F).db
+cp /var/www/glean/ainews.db ~/glean_backup_$(date +%F).db
 ```
 
 > [!TIP]
@@ -320,15 +320,15 @@ cp /var/www/ainews/ainews.db ~/ainews_backup_$(date +%F).db
 
 ```bash
 # 1. 删除 systemd 服务文件
-sudo rm /etc/systemd/system/ainews-backend.service
-sudo rm /etc/systemd/system/ainews-worker.service
+sudo rm /etc/systemd/system/glean-backend.service
+sudo rm /etc/systemd/system/glean-worker.service
 sudo systemctl daemon-reload
 
 # 2. 删除 Nginx 源配置文件 (sites-available 中的源文件)
 sudo rm /etc/nginx/sites-available/new.blacknico.com
 
 # 3. 删除整个项目目录 (包含代码、虚拟环境、前端打包文件和数据库)
-sudo rm -rf /var/www/ainews
+sudo rm -rf /var/www/glean
 ```
 
 ## 验证计划
@@ -337,9 +337,9 @@ sudo rm -rf /var/www/ainews
 
 - **访问域名**: 在浏览器中访问 `https://new.blacknico.com`，应该看到 Nginx 的默认页面或“无法连接”错误。
 - **确认服务不存在**:
-  - 分别运行 `sudo systemctl status ainews-backend` 和 `sudo systemctl status ainews-worker`，两者都应该提示服务不存在。
+  - 分别运行 `sudo systemctl status glean-backend` 和 `sudo systemctl status glean-worker`，两者都应该提示服务不存在。
 - **确认文件已删除**:
-  - 运行 `ls /var/www/ainews`，应该提示 `No such file or directory`。
+  - 运行 `ls /var/www/glean`，应该提示 `No such file or directory`。
 
 > [!IMPORTANT]
 > 备份是您的最后一道防线。请确保步骤 3 中的数据库备份已成功完成并已下载到您的本地电脑或移动到其他安全位置。

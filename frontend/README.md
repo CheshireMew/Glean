@@ -1,4 +1,4 @@
-# AINEWS 前端
+# Glean 前端
 
 这个目录包含公开内容站和管理后台，使用 React、Vite、Ant Design 与 Axios。公开站位于 `/`，登录页位于 `/login`，后台位于 `/admin`。API 地址由 `.env.development` 或 `.env.production` 中的 `VITE_API_BASE_URL` 决定。
 

@@ -5,7 +5,7 @@ from typing import List
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-ENVIRONMENT = (os.getenv("AINEWS_ENV") or os.getenv("ENV") or "development").strip().lower()
+ENVIRONMENT = (os.getenv("GLEAN_ENV") or os.getenv("AINEWS_ENV") or os.getenv("ENV") or "development").strip().lower()
 if ENVIRONMENT not in {"development", "production", "test"}:
     raise RuntimeError(f"不支持的运行环境: {ENVIRONMENT}")
 
@@ -24,7 +24,7 @@ def _source_version() -> str:
 SOURCE_VERSION = _source_version()
 
 class Settings:
-    PROJECT_NAME: str = "AINews Admin API"
+    PROJECT_NAME: str = "Glean Admin API"
     APP_VERSION: str = (os.getenv("APP_VERSION") or SOURCE_VERSION).strip()
     ENV: str = ENVIRONMENT
     

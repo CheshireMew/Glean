@@ -148,8 +148,8 @@ class PublicContentService:
         else:
             payload = self.get_public_content(content_kind, limit, 0, publication_slug=publication_slug)
             items = payload.get("items", [])
-        title = publication["display_name"] if publication else ("AINews 快讯" if content_kind == "news" else "AINews 文章")
-        description = "AINews 公开内容 RSS"
+        title = publication["display_name"] if publication else ("Glean 快讯" if content_kind == "news" else "Glean 文章")
+        description = "Glean 公开内容 RSS"
         pub_date = format_datetime(datetime.now(timezone.utc))
         xml_items = "\n".join(self._rss_item_xml(item) for item in items)
         return (

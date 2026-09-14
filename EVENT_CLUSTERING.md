@@ -1,6 +1,6 @@
 # 事件聚合
 
-AINews 不再把相似报道分成“主新闻”和“重复新闻”。每家媒体的原始报道都保存在 `news`，跨来源事件保存在 `content_events`，两者通过 `event_sources` 建立可追溯关系。
+Glean 不再把相似报道分成“主新闻”和“重复新闻”。每家媒体的原始报道都保存在 `news`，跨来源事件保存在 `content_events`，两者通过 `event_sources` 建立可追溯关系。
 
 ## 处理过程
 

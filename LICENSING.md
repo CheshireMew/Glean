@@ -1,6 +1,6 @@
 # Licensing
 
-The original application source code authored for **AINEWS** is licensed under `AGPL-3.0-or-later`. The full GNU Affero General Public License version 3 text is in `LICENSE`.
+The original application source code authored for **Glean** is licensed under `AGPL-3.0-or-later`. The full GNU Affero General Public License version 3 text is in `LICENSE`.
 
 The AGPL grant covers the application, collectors, API, frontend, and distribution workflow written for this project. Crawled news articles, headlines, images, API responses, and other publisher content are not relicensed by this repository.
 

@@ -1,6 +1,6 @@
 # Vibe Coding 操作手册
 
-> 基于 AINEWS 项目实战经验总结的 AI 辅助编程最佳实践
+> 基于 Glean 项目实战经验总结的 AI 辅助编程最佳实践
 
 ---
 
@@ -601,4 +601,4 @@ git checkout HEAD~1 -- path/to/file
 
 ---
 
-最后更新：基于 AINEWS 项目实战经验（2024-12-26）
+最后更新：基于 Glean 项目实战经验（2024-12-26）

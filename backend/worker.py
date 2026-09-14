@@ -8,7 +8,7 @@ from backend.app.core.config import settings
 from backend.app.core.logging_config import configure_logging
 from backend.app.infrastructure.database import assert_database_ready
 
-logger = getLogger("ainews.worker")
+logger = getLogger("glean.worker")
 
 
 async def main():
@@ -17,7 +17,7 @@ async def main():
     assert_database_ready()
     runtime = app_services.automation_runtime
     if not await runtime.acquire_worker_lease():
-        raise RuntimeError("已有 AINEWS worker 持有有效租约，拒绝启动第二个 worker")
+        raise RuntimeError("已有 Glean worker 持有有效租约，拒绝启动第二个 worker")
     tasks = [asyncio.create_task(runtime.heartbeat_loop(), name="worker_heartbeat_loop")]
     try:
         app_services.scraper_runs.configure_worker(runtime.instance_id)

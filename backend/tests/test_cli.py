@@ -39,7 +39,7 @@ class CLITest(unittest.TestCase):
         tools_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir = tempfile.TemporaryDirectory(dir=tools_dir)
         self.original_db_path = database.db_path
-        self.db_path = Path(self.temp_dir.name) / "ainews-cli.db"
+        self.db_path = Path(self.temp_dir.name) / "glean-cli.db"
         database.db_path = str(self.db_path)
 
     def tearDown(self):
@@ -719,7 +719,7 @@ class CLITest(unittest.TestCase):
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                str(root / "ainews.ps1"),
+                str(root / "glean.ps1"),
                 "version",
             ],
             cwd=root,
@@ -737,7 +737,7 @@ class CLITest(unittest.TestCase):
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                str(root / "ainews.ps1"),
+                str(root / "glean.ps1"),
                 "not-a-command",
             ],
             cwd=root,
@@ -748,7 +748,7 @@ class CLITest(unittest.TestCase):
         self.assertEqual(invalid.returncode, 2, invalid.stderr)
         self.assertEqual(json.loads(invalid.stdout)["error"]["type"], "UsageError")
 
-        wrapper = (root / "ainews.ps1").read_text(encoding="utf-8-sig")
+        wrapper = (root / "glean.ps1").read_text(encoding="utf-8-sig")
         self.assertIn(r"D:\Tools\Python310\python.exe", wrapper)
         self.assertIn("@args", wrapper)
         self.assertIn("exit $LASTEXITCODE", wrapper)

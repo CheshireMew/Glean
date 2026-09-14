@@ -126,7 +126,7 @@ def transactional_repositories():
     if current is not None and current.connection is not None:
         conn = current.connection
         if conn.in_transaction:
-            savepoint = f"ainews_{uuid.uuid4().hex}"
+            savepoint = f"glean_{uuid.uuid4().hex}"
             conn.execute(f"SAVEPOINT {savepoint}")
             try:
                 yield current

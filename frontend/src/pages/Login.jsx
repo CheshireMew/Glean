@@ -19,7 +19,7 @@ const Login = () => {
         <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 text-slate-900">
             <main className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-200/60">
                 <div className="mb-6">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">AINews</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Glean</p>
                     <h1 className="mt-2 text-2xl font-bold">管理员登录</h1>
                     <p className="mt-1 text-sm text-slate-500">使用服务器配置的管理员账号进入后台。</p>
                 </div>

@@ -1,6 +1,6 @@
-# AINews 情报与发布工作流
+# Glean 情报与发布工作流
 
-本文说明后台新增能力怎样组合成完整工作流，以及 JSON 配置中实际支持的字段。接口的请求与响应结构仍以运行中的 OpenAPI 和 `ainews.ps1 capabilities` 为准。
+本文说明后台新增能力怎样组合成完整工作流，以及 JSON 配置中实际支持的字段。接口的请求与响应结构仍以运行中的 OpenAPI 和 `glean.ps1 capabilities` 为准。
 
 ## 1. 从事件证据到可发布内容
 
@@ -47,7 +47,7 @@
     "password": "...",
     "use_tls": true,
     "use_ssl": false,
-    "subject": "AINews 内容更新"
+    "subject": "Glean 内容更新"
   }
 }
 ```
@@ -117,7 +117,7 @@ AI 审核、补充和固定样例评测都记录端点、模型、提示词版�
 先用 CLI 创建 API Key：
 
 ```powershell
-.\ainews.ps1 analyst-key create --name research-client
+.\glean.ps1 analyst-key create --name research-client
 ```
 
 明文 Key 只在创建结果中返回一次。HTTP 调用通过 `X-API-Key` 传入。第一次同步可使用较早的 ISO-8601 时间调用 `/api/analyst/delta`，保存响应的 `next_cursor`，下一次把它原样作为 `since`。游标在查询开始前保留一秒重叠窗口，因此并发发生的修改可能在下一轮重复返回，但不会落在两个游标之间；调用方应按事件或对象 ID 幂等更新。事件关系、证据和市场窗口的更新都会推进事件修改时间。

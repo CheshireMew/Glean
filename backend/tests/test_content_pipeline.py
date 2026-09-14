@@ -34,7 +34,7 @@ scraper_run_service = app_services.scraper_runs
 
 
 class LocalSourceAndAIHandler(BaseHTTPRequestHandler):
-    server_version = "AINewsTest/1.0"
+    server_version = "GleanTest/1.0"
 
     def log_message(self, format, *args):
         return
@@ -122,7 +122,7 @@ class ContentPipelineIntegrationTest(unittest.IsolatedAsyncioTestCase):
         tools_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir = tempfile.TemporaryDirectory(dir=tools_dir)
         self.original_db_path = database.db_path
-        database.db_path = str(Path(self.temp_dir.name) / "ainews-test.db")
+        database.db_path = str(Path(self.temp_dir.name) / "glean-test.db")
         init_database()
 
     async def asyncTearDown(self):

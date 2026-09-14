@@ -179,7 +179,7 @@ const DashboardContent = () => {
                 <div className="admin-brand">
                     <span className="admin-brand-mark">AI</span>
                     <span>
-                        <h1>AINews</h1>
+                        <h1>Glean</h1>
                         <small>内容运营后台</small>
                     </span>
                 </div>

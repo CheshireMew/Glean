@@ -15,12 +15,13 @@ from .sqlite_migration_plan import (
     create_current_schema,
     resolve_migration_plan,
 )
-logger = getLogger("ainews.database")
+logger = getLogger("glean.database")
 
 
 class Database(DatabaseBase):
     def __init__(self, db_path: str | None = None):
         if db_path is None:
+            # Keep the existing database filename across the Glean rename.
             db_path = str(Path(__file__).resolve().parents[4] / "ainews.db")
         self.db_path = db_path
 
@@ -140,7 +141,7 @@ class Database(DatabaseBase):
             if version != SCHEMA_VERSION:
                 raise RuntimeError(
                     f"数据库结构尚未就绪：当前 {version or 'unversioned'}，需要 {SCHEMA_VERSION}；"
-                    "请先启动 API 或运行 .\\ainews.ps1 system init 完成迁移"
+                    "请先启动 API 或运行 .\\glean.ps1 system init 完成迁移"
                 )
         finally:
             conn.close()

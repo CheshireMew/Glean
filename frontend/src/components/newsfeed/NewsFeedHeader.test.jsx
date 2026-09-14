@@ -54,6 +54,6 @@ describe('NewsFeedHeader', () => {
     )
 
     expect(screen.queryByRole('button', { name: '打开相关链接' })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 1, name: 'AI News' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Glean' })).toBeInTheDocument()
   })
 })

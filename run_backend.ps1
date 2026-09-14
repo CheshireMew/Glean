@@ -13,6 +13,6 @@ if ($listeners.Count -gt 0) {
 }
 
 $python = if (Test-Path -LiteralPath 'D:\Tools\Python310\python.exe') { 'D:\Tools\Python310\python.exe' } else { 'python' }
-$env:AINEWS_ENV = 'development'
-Write-Host "Starting AINEWS backend in development mode..." -ForegroundColor Cyan
+$env:GLEAN_ENV = 'development'
+Write-Host "Starting Glean backend in development mode..." -ForegroundColor Cyan
 & $python -m uvicorn backend.main:app --host 127.0.0.1 --port $port --reload

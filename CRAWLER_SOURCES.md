@@ -1,4 +1,4 @@
-# AINews 采集来源
+# Glean 采集来源
 
 采集器的唯一注册表是 [`backend/app/infrastructure/scrapers.py`](backend/app/infrastructure/scrapers.py)。运行时还会把后台配置且已启用的 RSS 源合并进同一注册表。
 

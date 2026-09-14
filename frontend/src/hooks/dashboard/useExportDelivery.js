@@ -29,6 +29,7 @@ export function useExportDelivery(contentKind, visibleItems, selectedIds) {
     const [pendingOperations, setPendingOperations] = useState([]);
 
     const getSelectedItems = () => visibleItems.filter((item) => selectedIds.includes(item.outputKey));
+    // Preserve recovery keys so a rename cannot trigger a duplicate delivery.
     const sendStorageKey = `ainews.delivery.manual.${contentKind}`;
     const dailyStorageKey = `ainews.delivery.daily.${contentKind}`;
 

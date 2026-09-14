@@ -12,7 +12,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     env:
-      AINEWS_ENV: test
+      GLEAN_ENV: test
       PYTHONUTF8: '1'
       JWT_SECRET_KEY: ci-only-secret-at-least-32-bytes-long
       ADMIN_USERNAME: ci-admin

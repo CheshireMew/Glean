@@ -113,10 +113,10 @@ class TelegramMessageService:
         intro: str | None = None,
         footer: str | None = None,
     ) -> str:
-        attribution = "🤖 由 AINEWS 自动生成"
+        attribution = "🤖 由 Glean 自动生成"
         if self._attribution_url:
             escaped_url = html_lib.escape(self._attribution_url, quote=True)
-            attribution = f'🤖 由 <a href="{escaped_url}">AINEWS</a> 自动生成'
+            attribution = f'🤖 由 <a href="{escaped_url}">Glean</a> 自动生成'
         rendered_footer = attribution if footer is None else html_lib.escape(str(footer))
         sections = [f"📅 <b>{html_lib.escape(report_title)}</b>"]
         if intro:

@@ -66,7 +66,7 @@ export default function NewsFeedHeader({ searchQuery, onSearchChange, menuOpen, 
                         <Lightning weight="fill" size={18} />
                     </div>
                     <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                        AI News
+                        Glean
                     </h1>
                 </div>
 

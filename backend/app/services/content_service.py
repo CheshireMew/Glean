@@ -121,4 +121,4 @@ class ContentService:
         )
 
     def get_export_filename(self) -> str:
-        return f"ainews_export_{datetime.now().strftime('%Y%m%d%H%M')}.json"
+        return f"glean_export_{datetime.now().strftime('%Y%m%d%H%M')}.json"

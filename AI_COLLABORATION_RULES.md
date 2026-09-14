@@ -650,6 +650,6 @@ git commit -m 'feat: add pagination to news list'
 
 ---
 
-最后更新：基于 AINEWS 项目实战经验（2024-12-26）
+最后更新：基于 Glean 项目实战经验（2024-12-26）
 
 **这份规范是你的工作准则，请严格遵守。**

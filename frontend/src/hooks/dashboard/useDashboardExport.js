@@ -44,7 +44,7 @@ export function useDashboardExport(contentKind) {
             const url = window.URL.createObjectURL(new Blob([res.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `ainews_export_${scope}_${Date.now()}.json`);
+            link.setAttribute('download', `glean_export_${scope}_${Date.now()}.json`);
             document.body.appendChild(link);
             link.click();
             link.parentNode.removeChild(link);
