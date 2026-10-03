@@ -66,6 +66,10 @@ class ScrapeCandidateCollector:
         self.seen_urls.add(url)
         if self.scraper.should_stop_scraping(title, url, published_at):
             return CANDIDATE_STOP
+        if self.scraper.incremental_mode and (
+            url in self.scraper.existing_urls or url == self.scraper.last_news_url
+        ):
+            return CANDIDATE_SKIP
         if len(self.results) >= self.scraper.max_items:
             print(f"[数量限制] 已达到最大抓取数量 {self.scraper.max_items}，停止抓取")
             return CANDIDATE_STOP
@@ -109,6 +113,7 @@ class BaseScraper(ABC):
     """所有爬虫的基类。"""
 
     transport_kind = "browser"
+    allow_empty_results = False
 
     def __init__(self, site_name: str, base_url: str, max_items: int = 10):
         self.site_name = site_name
@@ -127,6 +132,7 @@ class BaseScraper(ABC):
         self.item_callback = None
         self.persistence_errors: list[str] = []
         self.used_result_buffer = False
+        self.encountered_existing_items = False
 
     def create_result_buffer(self) -> ScraperResultBuffer:
         self.used_result_buffer = True
@@ -136,12 +142,18 @@ class BaseScraper(ABC):
         return ScrapeCandidateCollector(self)
 
     def normalize_result_item(self, item: Dict) -> Dict:
+        self.raise_if_blocked()
         normalized = dict(item)
         normalized.setdefault("content", "")
         normalized.setdefault("source_site", self.site_name)
         normalized.setdefault("author", self.site_name)
         normalized.setdefault("type", self.news_type)
         return normalized
+
+    def raise_if_blocked(self):
+        error = getattr(self, "_source_access_error", None)
+        if error is not None:
+            raise error
 
     async def init_browser(self, headless: bool = True):
         if not isinstance(self.transport, BrowserSourceTransport):
@@ -211,7 +223,9 @@ class BaseScraper(ABC):
     async def detail_page(self, url: str, load_delay_seconds: float = 0):
         if not self.browser:
             raise RuntimeError(f"{self.site_name} browser is not initialized")
-        page = await self.browser.new_page()
+        self.raise_if_blocked()
+        context = getattr(self, "browser_context", None)
+        page = await (context.new_page() if context else self.browser.new_page())
         try:
             await self.fetch_page_with_delay(url, page=page)
             if load_delay_seconds > 0:
@@ -233,12 +247,14 @@ class BaseScraper(ABC):
         try:
             await self.transport.start(self)
             results = await self.scrape_important_news()
+            self.raise_if_blocked()
             if self.persistence_errors:
                 raise RuntimeError("采集结果写入失败：" + "；".join(self.persistence_errors[:3]))
-            if not results and self.transport_kind != "rss":
+            if not results and self.transport_kind != "rss" and not self.allow_empty_results and not self.encountered_existing_items:
                 raise RuntimeError("页面请求成功但没有解析出任何内容，请检查站点结构或反爬页面")
             return results
         except Exception as exc:
+            self.raise_if_blocked()
             logger.exception("%s 爬虫执行失败", self.site_name)
             raise RuntimeError(f"{self.site_name} 爬虫执行失败: {exc}") from exc
         finally:

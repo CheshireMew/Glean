@@ -36,13 +36,17 @@ async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    for error in errors:
+        if request.url.path in {"/api/login", "/api/system/credentials"} or any("password" in str(part).lower() for part in error.get("loc", ())):
+            error.pop("input", None)
     return JSONResponse(
         status_code=422,
         content=APIResponse.error(
             message="请求参数无效",
             code=422,
             error_type="RequestValidationError",
-            details=exc.errors(),
+            details=errors,
         ),
     )
 

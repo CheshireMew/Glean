@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
 $port = 8000
@@ -14,5 +14,6 @@ if ($listeners.Count -gt 0) {
 
 $python = if (Test-Path -LiteralPath 'D:\Tools\Python310\python.exe') { 'D:\Tools\Python310\python.exe' } else { 'python' }
 $env:GLEAN_ENV = 'development'
+$Host.UI.RawUI.WindowTitle = 'Glean Backend'
 Write-Host "Starting Glean backend in development mode..." -ForegroundColor Cyan
-& $python -m uvicorn backend.main:app --host 127.0.0.1 --port $port --reload
+& $python -m uvicorn backend.main:app --host 127.0.0.1 --port $port --reload --no-proxy-headers

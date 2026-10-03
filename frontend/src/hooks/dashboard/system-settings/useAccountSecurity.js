@@ -13,8 +13,8 @@ export function useAccountSecurity(form) {
             setLoading(true);
             await updateCredentials({
                 current_password: values.current_password,
-                new_username: values.new_username,
-                new_password: values.new_password,
+                new_username: values.new_username?.trim() || undefined,
+                new_password: values.new_password || undefined,
             });
             message.success('账户信息更新成功，请重新登录');
             form.resetFields();

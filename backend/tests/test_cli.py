@@ -293,7 +293,7 @@ class CLITest(unittest.TestCase):
 
     def test_capabilities_publish_specific_input_and_output_schemas(self):
         specs = load_command_specs()
-        self.assertEqual(len(specs), 126)
+        self.assertEqual(len(specs), 128)
         self.assertTrue(all(spec.help.strip() for spec in specs))
         self.assertTrue(all(spec.output_schema for spec in specs))
         for spec in specs:

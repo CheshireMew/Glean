@@ -25,6 +25,7 @@ export const getTelegramConfig = () => requestOperation('getTelegramConfig');
 export const setTelegramConfig = (data) => requestOperation('setTelegramConfig', { data });
 
 export const getRssSources = (config = {}) => requestOperation('getRssSources', config);
+export const previewRssSource = (data) => requestOperation('previewRssSource', { data, timeout: 45000 });
 export const createRssSource = (data) => requestOperation('createRssSource', { data });
 export const updateRssSource = (id, data) => requestOperation('updateRssSource', { path: { id }, data });
 export const deleteRssSource = (id) => requestOperation('deleteRssSource', { path: { id } });

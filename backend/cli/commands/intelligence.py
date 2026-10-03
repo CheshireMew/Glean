@@ -126,7 +126,7 @@ def draft_preview(ctx, args, payload):
 
 
 async def draft_publish(ctx, args, payload):
-    return await ctx.services.publication_workflow.publish_draft(args.id)
+    return await ctx.services.publication_workflow.publish_draft(args.id, website_only=args.website_only)
 
 
 async def draft_publish_due(ctx, args, payload):
@@ -324,7 +324,7 @@ def command_specs():
         _input_spec("draft.create", ("draft", "create"), "创建可审阅的发布草稿", draft_create, DraftCreateRequest),
         _input_spec("draft.update", ("draft", "update"), "更新、排期或取消发布草稿", draft_update, DraftUpdateRequest, (arg("id", type=int),)),
         CommandSpec("draft.preview", ("draft", "preview"), "生成最终排版但不投递", draft_preview, arguments=(arg("id", type=int),)),
-        CommandSpec("draft.publish", ("draft", "publish"), "向草稿配置的全部渠道发布", draft_publish, arguments=(arg("id", type=int),), requires_yes=True),
+        CommandSpec("draft.publish", ("draft", "publish"), "发布草稿，可选择仅发布到网站", draft_publish, arguments=(arg("id", type=int), arg("--website-only", action="store_true")), requires_yes=True),
         CommandSpec("draft.publish-due", ("draft", "publish-due"), "发布所有到期草稿", draft_publish_due, arguments=(arg("--limit", type=int, default=100),), requires_yes=True),
         CommandSpec("correction.list", ("correction", "list"), "列出发布更正", correction_list, arguments=(arg("--published", action="store_true", default=None), limit)),
         _input_spec("correction.create", ("correction", "create"), "创建发布更正", correction_create, CorrectionCreateRequest),

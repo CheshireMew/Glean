@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import random
 from datetime import datetime, timezone
 from logging import getLogger
+from ..domain.ai_sources import AI_SOURCES
 
 logger = getLogger("uvicorn")
 
@@ -30,55 +30,49 @@ class ScraperScheduleService:
         logger.info("Starting Scheduler Loop")
         while True:
             try:
-                if not is_working_hours():
-                    await asyncio.sleep(1800)
-                    continue
-
-                if self._operation_leases.is_active("content-pipeline"):
-                    await asyncio.sleep(60)
-                    continue
-
-                now = datetime.now(timezone.utc)
-                command_repo = self._scraper_command_repository()
-                names = self._scraper_registry.names()
-                if self._source_operations is not None:
-                    enabled = {
-                        source["source_key"]
-                        for source in self._source_operations.list_sources()
-                        if source.get("enabled")
-                    }
-                    names = [name for name in names if name in enabled]
-                for name in names:
-                    if self._scraper_runs.available_launch_slots() <= 0:
-                        break
-                    config = self._runtime_state.get_scraper_config(name)
-                    interval = config.get("interval")
-                    if not interval:
-                        continue
-
-                    status = self._runtime_state.get_scraper_state(name)
-                    if status.get("status") in {"queued", "running"} or command_repo.has_pending_command(name, "run"):
-                        continue
-
-                    last_run_str = status.get("last_run")
-                    should_run = False
-                    if not last_run_str:
-                        should_run = True
-                    else:
-                        last_run = datetime.fromisoformat(last_run_str.replace("Z", "+00:00"))
-                        if last_run.tzinfo is None:
-                            last_run = last_run.replace(tzinfo=timezone.utc)
-                        diff = (now - last_run).total_seconds() / 60
-                        adjusted_interval = interval + interval * random.uniform(-0.2, 0.2)
-                        if diff >= adjusted_interval:
-                            should_run = True
-
-                    if should_run:
-                        definition = self._scraper_registry.get(name)
-                        limit = config.get("limit", definition.default_limit if definition else 5)
-                        self._scraper_runs.launch_scraper(name, limit)
-
-                await asyncio.sleep(60)
+                self.run_due_scrapers(is_working_hours)
             except Exception as exc:
                 logger.error(f"Scheduler Error: {exc}", exc_info=True)
-                await asyncio.sleep(60)
+            # Settings are shared through SQLite with the API process. Re-read
+            # them promptly instead of sleeping for 30 minutes while disabled.
+            await asyncio.sleep(5)
+
+    def can_collect(self, name: str, is_working_hours) -> bool:
+        return bool(
+            name not in {source["key"] for source in AI_SOURCES}
+            and is_working_hours()
+            and self._scraper_registry.get(name)
+            and self._runtime_state.get_scraper_config(name).get("interval")
+            and (self._source_operations is None or self._source_operations.is_source_enabled(name))
+        )
+
+    def run_due_scrapers(self, is_working_hours, now=None) -> None:
+        if not is_working_hours() or self._operation_leases.is_active("content-pipeline"):
+            return
+        now = now or datetime.now(timezone.utc)
+        command_repo = self._scraper_command_repository()
+        for name in self._scraper_registry.names():
+            if self._scraper_runs.available_launch_slots() <= 0 or not is_working_hours():
+                break
+            try:
+                if not self.can_collect(name, is_working_hours):
+                    continue
+                if self._runtime_state.get_source_cooldown(name):
+                    continue
+                config = self._runtime_state.get_scraper_config(name)
+                status = self._runtime_state.get_scraper_state(name)
+                if status.get("status") in {"queued", "running"} or command_repo.has_pending_command(name, "run"):
+                    continue
+                if status.get("last_run"):
+                    last_run = datetime.fromisoformat(status["last_run"].replace("Z", "+00:00"))
+                    if last_run.tzinfo is None:
+                        last_run = last_run.replace(tzinfo=timezone.utc)
+                    if (now - last_run).total_seconds() < config["interval"] * 60:
+                        continue
+                self._scraper_runs.launch_scraper(
+                    name, config["limit"],
+                    should_continue=lambda name=name: self.can_collect(name, is_working_hours),
+                )
+            except Exception:
+                # A broken source must not block scheduling all later sources.
+                logger.exception("Could not schedule scraper %s", name)

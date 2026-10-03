@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from typing import Dict
 
-from shared.content_contract import DELIVERY_STATUS_SENT, EVENT_SOURCE_TABLE, REVIEW_STATUS_SELECTED, REVIEW_TABLE
+from shared.content_contract import EVENT_SOURCE_TABLE, REVIEW_STATUS_SELECTED, REVIEW_TABLE
 from .base_repository import BaseRepository
+from .public_visibility import published_entry_sql
 
 
 class ReviewPublicRepository(BaseRepository):
@@ -21,7 +22,7 @@ class ReviewPublicRepository(BaseRepository):
               ON r.content_type = p.content_type
              AND r.profile_slug = ?
              AND r.review_status = ?
-             AND r.delivery_status = ?
+             AND {published_entry_sql()}
              AND r.published_at >= datetime('now', ?)
             WHERE p.content_type = ?
             GROUP BY p.revision
@@ -29,7 +30,6 @@ class ReviewPublicRepository(BaseRepository):
             (
                 profile_slug,
                 REVIEW_STATUS_SELECTED,
-                DELIVERY_STATUS_SENT,
                 f"-{days} days",
                 content_kind,
             ),
@@ -80,11 +80,11 @@ class ReviewPublicRepository(BaseRepository):
         days = 3 if content_kind == "news" else 7
         count_cursor = self.execute(
             f"""
-            SELECT COUNT(*) as total FROM {REVIEW_TABLE}
-            WHERE content_type = ? AND profile_slug = ? AND review_status = ? AND delivery_status = ?
+            SELECT COUNT(*) as total FROM {REVIEW_TABLE} r
+            WHERE content_type = ? AND profile_slug = ? AND review_status = ? AND {published_entry_sql()}
               AND published_at >= datetime('now', ?)
             """,
-            (content_kind, profile_slug, REVIEW_STATUS_SELECTED, DELIVERY_STATUS_SENT, f"-{days} days"),
+            (content_kind, profile_slug, REVIEW_STATUS_SELECTED, f"-{days} days"),
         )
         total = count_cursor.fetchone()["total"]
         cursor_clause = ""
@@ -99,12 +99,12 @@ class ReviewPublicRepository(BaseRepository):
                    r.enriched_summary, r.enriched_impact, r.enriched_background, r.enrichment_citations,
                    COALESCE(e.source_count, 1) AS source_count
             FROM {REVIEW_TABLE} r LEFT JOIN content_events e ON e.id = r.event_id
-            WHERE r.content_type = ? AND r.profile_slug = ? AND r.review_status = ? AND r.delivery_status = ?
+            WHERE r.content_type = ? AND r.profile_slug = ? AND r.review_status = ? AND {published_entry_sql()}
               AND r.published_at >= datetime('now', ?)
               {cursor_clause}
             ORDER BY r.published_at DESC, r.id DESC LIMIT ? OFFSET ?
             """,
-            tuple([content_kind, profile_slug, REVIEW_STATUS_SELECTED, DELIVERY_STATUS_SENT, f"-{days} days", *cursor_params, limit, 0 if cursor else offset]),
+            tuple([content_kind, profile_slug, REVIEW_STATUS_SELECTED, f"-{days} days", *cursor_params, limit, 0 if cursor else offset]),
         )
         items = self._hydrate(result_cursor.fetchall())
         next_cursor = None
@@ -116,8 +116,8 @@ class ReviewPublicRepository(BaseRepository):
     def search_public_entries(self, query_text: str, content_kind: str, profile_slugs: Dict[str, str], limit: int = 20, offset: int = 0) -> Dict:
         use_fts = len(query_text) >= 3
         search_term = f'"{query_text.replace(chr(34), chr(34) * 2)}"' if use_fts else f"%{query_text}%"
-        params = [REVIEW_STATUS_SELECTED, DELIVERY_STATUS_SENT]
-        where_parts = ["r.review_status = ?", "r.delivery_status = ?"]
+        params = [REVIEW_STATUS_SELECTED]
+        where_parts = ["r.review_status = ?", published_entry_sql()]
 
         if content_kind == "news":
             where_parts.append("r.content_type = 'news'")

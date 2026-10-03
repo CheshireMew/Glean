@@ -82,11 +82,11 @@ class Settings:
             problems.append("生产环境必须使用明确的源码 VERSION")
         elif self.APP_VERSION != SOURCE_VERSION:
             problems.append(f"APP_VERSION 必须与源码 VERSION {SOURCE_VERSION} 一致")
-        if len(self.JWT_SECRET_KEY) < 32 or is_placeholder(self.JWT_SECRET_KEY) or len(set(self.JWT_SECRET_KEY)) < 12:
+        if self.JWT_SECRET_KEY and (len(self.JWT_SECRET_KEY) < 32 or is_placeholder(self.JWT_SECRET_KEY) or len(set(self.JWT_SECRET_KEY)) < 12):
             problems.append("JWT_SECRET_KEY 必须是至少 32 位且非占位符的随机值")
-        if not self.ADMIN_USERNAME or not self.ADMIN_PASSWORD:
-            problems.append("生产环境必须配置管理员账号和密码")
-        elif len(self.ADMIN_PASSWORD) < 12 or is_placeholder(self.ADMIN_PASSWORD) or self.ADMIN_PASSWORD == self.ADMIN_USERNAME:
+        if bool(self.ADMIN_USERNAME) != bool(self.ADMIN_PASSWORD):
+            problems.append("初始化管理员账号和密码必须同时配置，已有数据库账号时可同时留空")
+        elif self.ADMIN_PASSWORD and (len(self.ADMIN_PASSWORD) < 12 or is_placeholder(self.ADMIN_PASSWORD) or self.ADMIN_PASSWORD == self.ADMIN_USERNAME):
             problems.append("生产环境管理员密码至少 12 位，且不能是占位符或与用户名相同")
         if any("localhost" in origin or "127.0.0.1" in origin for origin in self.ALLOWED_ORIGINS):
             problems.append("生产环境 ALLOWED_ORIGINS 不能包含本机开发地址")

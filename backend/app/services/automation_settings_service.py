@@ -17,7 +17,7 @@ AUTOMATION_FIELD_MAP = {
     "push_hours": "delivery_hours",
 }
 RUNTIME_DEFAULTS = {
-    "enabled": True,
+    "enabled": False,
     "start_time": "08:00",
     "end_time": "23:59",
     "interval_minutes": 60,
@@ -47,7 +47,7 @@ class AutomationSettingsService:
         repo = self._config_repository()
         enabled_raw = repo.get_config("automation.runtime.enabled")
         return {
-            "enabled": (enabled_raw if enabled_raw is not None else "true").lower() == "true",
+            "enabled": str(enabled_raw or "false").strip().lower() == "true",
             "start_time": repo.get_config("automation.runtime.start_time") or RUNTIME_DEFAULTS["start_time"],
             "end_time": repo.get_config("automation.runtime.end_time") or RUNTIME_DEFAULTS["end_time"],
             "interval_minutes": positive_int(

@@ -407,8 +407,10 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
             conn.close()
 
     async def test_api_contracts_and_command_http_semantics(self):
-        token = AuthService(repositories().config).create_access_token(
-            {"sub": settings.ADMIN_USERNAME}
+        repositories().config.set_config("admin_username", "test-admin")
+        repositories().config.set_config("admin_password", AuthService.hash_password("test-password-1234"))
+        token = AuthService(repositories().config, repositories().auth).create_access_token(
+            {"sub": "test-admin"}
         )
         headers = {"Authorization": f"Bearer {token}"}
         repositories().runtime_leases.acquire(
@@ -485,8 +487,10 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app_services.ai_provider_settings.get_config(include_secrets=True), ai_before)
         self.assertEqual(app_services.telegram_settings.get_config(), telegram_before)
 
-        token = AuthService(repositories().config).create_access_token(
-            {"sub": settings.ADMIN_USERNAME}
+        repositories().config.set_config("admin_username", "test-admin")
+        repositories().config.set_config("admin_password", AuthService.hash_password("test-password-1234"))
+        token = AuthService(repositories().config, repositories().auth).create_access_token(
+            {"sub": "test-admin"}
         )
         headers = {"Authorization": f"Bearer {token}"}
         with (
@@ -553,8 +557,10 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
                     )
 
     async def test_read_endpoints_serialize_through_their_declared_dtos(self):
-        token = AuthService(repositories().config).create_access_token(
-            {"sub": settings.ADMIN_USERNAME}
+        repositories().config.set_config("admin_username", "test-admin")
+        repositories().config.set_config("admin_password", AuthService.hash_password("test-password-1234"))
+        token = AuthService(repositories().config, repositories().auth).create_access_token(
+            {"sub": "test-admin"}
         )
         headers = {"Authorization": f"Bearer {token}"}
         protected_requests = (

@@ -1,10 +1,11 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useLoginForm } from '../hooks/useLoginForm';
 
 const Login = () => {
     const navigate = useNavigate();
-    const { loading, error, submit } = useLoginForm(navigate);
+    const location = useLocation();
+    const { loading, error, submit } = useLoginForm(navigate, location.state?.returnTo);
 
     const handleSubmit = (event) => {
         event.preventDefault();
@@ -21,13 +22,14 @@ const Login = () => {
                 <div className="mb-6">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">Glean</p>
                     <h1 className="mt-2 text-2xl font-bold">管理员登录</h1>
-                    <p className="mt-1 text-sm text-slate-500">使用服务器配置的管理员账号进入后台。</p>
+                    <p className="mt-1 text-sm text-slate-500">使用管理员账号进入后台，登录后可在系统配置中修改账号和密码。</p>
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <label className="block text-sm font-medium text-slate-700">
                         用户名
                         <input
                             name="username"
+                            maxLength={64}
                             autoComplete="username"
                             required
                             aria-label="用户名"
@@ -39,6 +41,7 @@ const Login = () => {
                         密码
                         <input
                             name="password"
+                            maxLength={256}
                             type="password"
                             autoComplete="current-password"
                             required

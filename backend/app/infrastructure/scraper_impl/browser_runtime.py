@@ -2,57 +2,130 @@ from __future__ import annotations
 
 import asyncio
 import random
-import re
 from typing import Optional, TYPE_CHECKING
+from urllib.parse import urljoin
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
 
-from .user_agents import get_random_user_agent
+from .source_access import source_access, source_host, SourceAccessError
 
 
 async def init_browser(scraper, headless: bool = True):
     from playwright.async_api import async_playwright
 
+    scraper._source_access_error = None
+    scraper._source_redirects = {}
+    scraper._source_requests = {}
+    scraper._source_access = source_access
     scraper.playwright = await async_playwright().start()
-    scraper.browser = await scraper.playwright.chromium.launch(
-        headless=headless,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--disable-dev-shm-usage",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-web-security",
-            "--disable-features=IsolateOrigins,site-per-process",
-            "--disable-infobars",
-        ],
+    scraper.browser = await scraper.playwright.chromium.launch(headless=headless)
+    scraper.browser_context = await scraper.browser.new_context(
+        viewport={"width": 1440, "height": 900}, locale="zh-CN", service_workers="block",
     )
-    scraper.page = await scraper.browser.new_page()
-    await scraper.page.add_init_script(
-        """
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        });
-        """
-    )
+    async def handle_route(route):
+        request = route.request
+        pending = None
+        if request.resource_type in {"document", "xhr", "fetch"} and request_budget_url(scraper, request.url) == scraper.base_url:
+            pending = scraper._source_requests.setdefault(request.frame.page, set())
+            pending.add(asyncio.current_task())
+        try:
+            await pace_browser_request(scraper, route)
+        finally:
+            if pending is not None:
+                pending.discard(asyncio.current_task())
 
-    viewport = random.choice(
-        [
-            {"width": 1920, "height": 1080},
-            {"width": 1366, "height": 768},
-            {"width": 1536, "height": 864},
-            {"width": 1440, "height": 900},
-            {"width": 2560, "height": 1440},
-        ]
-    )
-    await scraper.page.set_viewport_size(viewport)
+    async def handle_response(response):
+        await inspect_browser_response(scraper, response)
+
+    await scraper.browser_context.route("**/*", handle_route)
+    scraper.browser_context.on("response", handle_response)
+    scraper.page = await scraper.browser_context.new_page()
     scraper.page.set_default_timeout(30000)
-    scraper.page.set_default_navigation_timeout(30000)
+    scraper.page.set_default_navigation_timeout(60000)
+
+
+def request_budget_url(scraper, url):
+    site = source_host(scraper.base_url)
+    host = source_host(url)
+    return scraper.base_url if host == site or host.endswith("." + site) else url
+
+
+async def pace_browser_request(scraper, route):
+    request = route.request
+    essential_request = request.resource_type == "document" or request_budget_url(scraper, request.url) == scraper.base_url
+    if scraper._source_access_error or request.resource_type in {"image", "media", "font"}:
+        await route.abort()
+        return
+    try:
+        budget_url = request_budget_url(scraper, request.url)
+        if request.resource_type in {"document", "xhr", "fetch"}:
+            await scraper._source_access.wait(budget_url)
+        else:
+            scraper._source_access.assert_allowed(budget_url)
+        if scraper._source_access_error:
+            await route.abort()
+        elif request.resource_type in {"document", "xhr", "fetch"}:
+            # Playwright routing does not re-intercept native HTTP redirects.
+            # Fetch one hop at a time so every destination uses the same gate.
+            url = request.url
+            method = request.method
+            for hop in range(6):
+                response = await route.fetch(url=url, method=method, max_redirects=0, max_retries=0, timeout=30000)
+                try:
+                    headers = response.headers
+                    scraper._source_access.inspect(request_budget_url(scraper, url), response.status, headers,
+                        await response.text() if request.resource_type == "document" or "text/html" in headers.get("content-type", "") else "")
+                    if response.status in (301, 302, 303, 307, 308) and headers.get("location"):
+                        if hop == 5:
+                            raise SourceAccessError("页面重定向次数过多，已停止")
+                        url = urljoin(url, headers["location"])
+                        scraper._source_access.assert_allowed(request_budget_url(scraper, url))
+                        if request.resource_type == "document" and request.frame == request.frame.page.main_frame:
+                            # Re-navigate explicitly to preserve the final page URL
+                            # and relative links instead of replaying a hidden redirect.
+                            scraper._source_redirects[request.frame.page] = url
+                            await route.fulfill(status=200, content_type="text/html", body="")
+                            return
+                        if response.status == 303 or (response.status in (301, 302) and method == "POST"):
+                            method = "GET"
+                        await scraper._source_access.wait(request_budget_url(scraper, url))
+                        continue
+                    await route.fulfill(response=response)
+                    return
+                finally:
+                    await response.dispose()
+        else:
+            await route.continue_()
+    except SourceAccessError as exc:
+        if essential_request:
+            scraper._source_access_error = exc
+        await route.abort()
+    except Exception as exc:
+        # A routing error must resolve the paused browser request and fail closed.
+        error = scraper._source_access.defer(
+            request_budget_url(scraper, request.url), f"浏览器请求未完成（{type(exc).__name__}）", minimum=600)
+        if essential_request:
+            scraper._source_access_error = error
+        await route.abort()
+
+
+async def inspect_browser_response(scraper, response):
+    if scraper._source_access_error or response.request.resource_type not in {"document", "xhr", "fetch"}:
+        return
+    try:
+        budget_url = request_budget_url(scraper, response.url)
+        # Unrelated analytics failures must not stop the article collector.
+        if budget_url != scraper.base_url and response.request.resource_type != "document":
+            return
+        scraper._source_access.inspect(budget_url, response.status, response.headers)
+    except SourceAccessError as exc:
+        scraper._source_access_error = exc
 
 
 async def close_browser(scraper):
     errors = []
-    for resource in (scraper.page, scraper.browser):
+    for resource in (getattr(scraper, "browser_context", None), scraper.browser):
         if resource:
             try:
                 await resource.close()
@@ -64,10 +137,27 @@ async def close_browser(scraper):
         except Exception as exc:
             errors.append(exc)
     scraper.page = None
+    scraper.browser_context = None
     scraper.browser = None
     scraper.playwright = None
     if errors:
         raise RuntimeError("浏览器资源未能完整关闭") from errors[0]
+
+
+async def wait_for_source_requests(scraper, page):
+    # Existing parsers assume the list API has loaded. Pacing those API calls
+    # must not turn a slow response into an apparently empty article list.
+    if not hasattr(scraper, "_source_requests"):
+        return
+    deadline = asyncio.get_running_loop().time() + 60
+    while True:
+        await asyncio.sleep(0.2)
+        if scraper._source_access_error:
+            raise scraper._source_access_error
+        if not scraper._source_requests.get(page):
+            return
+        if asyncio.get_running_loop().time() >= deadline:
+            raise scraper._source_access.defer(scraper.base_url, "页面接口等待超时，暂停后再试", minimum=600)
 
 
 async def fetch_page_with_delay(
@@ -78,43 +168,48 @@ async def fetch_page_with_delay(
     return_response: bool = False,
     page: Optional["Page"] = None,
 ):
+    from playwright.async_api import Error as BrowserError
+
     target_page = page if page else scraper.page
-    mean_delay = sum(delay_range) / 2
-    std_delay = (delay_range[1] - delay_range[0]) / 4
-    delay = max(delay_range[0], min(delay_range[1], random.gauss(mean_delay, std_delay)))
-    await asyncio.sleep(delay)
-
-    for attempt in range(max_retries):
+    attempts = max(1, min(max_retries, 2))
+    for attempt in range(attempts):
+        if scraper._source_access_error:
+            raise scraper._source_access_error
+        scraper._source_access.assert_allowed(request_budget_url(scraper, url))
         try:
-            user_agent = get_random_user_agent()
-            headers = {
-                "User-Agent": user_agent,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-US;q=0.7",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Sec-Fetch-User": "?1",
-                "Cache-Control": "max-age=0",
-            }
-            if "Chrome" in user_agent and "Edg" not in user_agent:
-                match = re.search(r"Chrome/(\d+)", user_agent)
-                chrome_version = match.group(1) if match else "131"
-                headers["sec-ch-ua"] = f'"Chromium";v="{chrome_version}", "Google Chrome";v="{chrome_version}", "Not?A_Brand";v="99"'
-                headers["sec-ch-ua-mobile"] = "?0"
-                headers["sec-ch-ua-platform"] = '"Windows"' if "Windows" in user_agent else ('"macOS"' if "Mac" in user_agent else '"Linux"')
-
-            await target_page.set_extra_http_headers(headers)
-            response = await target_page.goto(url, wait_until="domcontentloaded")
+            # Context routing paces documents and page-generated API requests,
+            # including redirects and detail pages, before they reach the site.
+            for hop in range(6):
+                response = await target_page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                destination = getattr(scraper, "_source_redirects", {}).pop(target_page, None)
+                if not destination:
+                    break
+                if hop == 5:
+                    raise SourceAccessError("页面重定向次数过多，已停止")
+                url = destination
+            if scraper._source_access_error:
+                raise scraper._source_access_error
+            await wait_for_source_requests(scraper, target_page)
+            if response is None:
+                raise SourceAccessError("页面没有返回有效响应")
+            budget_url = request_budget_url(scraper, response.url)
+            scraper._source_access.inspect(budget_url, response.status, response.headers, await target_page.content())
+            if response.status >= 500:
+                if attempt == attempts - 1:
+                    raise scraper._source_access.defer(budget_url, f"HTTP {response.status}，连续服务异常", minimum=600)
+                await asyncio.sleep(30 + random.uniform(0, 5))
+                continue
+            if response.status >= 400:
+                raise SourceAccessError(f"HTTP {response.status}，停止采集该页面")
             return response if return_response else target_page
-        except Exception as exc:
-            if attempt < max_retries - 1:
-                wait_time = 2**attempt + random.uniform(0, 1)
-                print(f"[反爬] 请求失败，{wait_time:.1f}秒后重试 (attempt {attempt + 1}/{max_retries}): {str(exc)[:50]}")
-                await asyncio.sleep(wait_time)
-            else:
-                print(f"[反爬] 请求最终失败 ({max_retries}次重试后): {url}")
-                raise
+        except SourceAccessError as exc:
+            scraper._source_access_error = exc
+            raise
+        except BrowserError:
+            if scraper._source_access_error:
+                raise scraper._source_access_error
+            if attempt == attempts - 1:
+                error = scraper._source_access.defer(request_budget_url(scraper, url), "连续页面请求错误或超时", minimum=600)
+                scraper._source_access_error = error
+                raise error
+            await asyncio.sleep(30 + random.uniform(0, 5))

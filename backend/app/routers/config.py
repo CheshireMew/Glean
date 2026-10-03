@@ -12,6 +12,7 @@ from ..models.config import (
     DeliveryScheduleConfig,
     EditorialProfileRequest,
     RssSourceRequest,
+    RssPreviewRequest,
     SystemSettingsRequest,
     SystemTimezoneConfig,
     TelegramConfigRequest,
@@ -26,6 +27,7 @@ from ..models.responses import (
     ReviewSettingsData,
     RssSourceData,
     RssSourcesData,
+    RssPreviewData,
     TelegramConfigData,
     TimezoneData,
 )
@@ -122,6 +124,11 @@ def set_ai_review_config(config: AIReviewConfigRequest, kind: ContentKind = "new
 @router.get("/rss/sources", response_model=APIEnvelope[RssSourcesData])
 def get_rss_sources(user: str = Depends(get_current_user)):
     return APIResponse.success(data=app_services.rss_sources.list_sources())
+
+
+@router.post("/rss/preview", response_model=APIEnvelope[RssPreviewData])
+async def preview_rss_source(config: RssPreviewRequest, user: str = Depends(get_current_user)):
+    return APIResponse.success(data=await app_services.rss_sources.preview(config.model_dump()))
 
 
 @router.post("/rss/sources", response_model=APIEnvelope[RssSourceData])

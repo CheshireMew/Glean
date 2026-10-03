@@ -40,7 +40,10 @@ export default function SystemBasicsCard() {
                 <div style={{ width: '100%', marginBottom: 8 }}>
                     <Text strong>自动任务运行计划</Text>
                 </div>
-                <Form.Item label="启用" style={{ marginBottom: 16 }}>
+                <div style={{ width: '100%', marginBottom: 12 }}>
+                    <Text type="secondary">默认关闭。开启并保存后，已启用且设置了采集频率的来源会在运行时段自动采集；未采集过或已到期的来源会开始第一次任务。关闭并保存后，正在运行的自动采集也会停止，已入库内容保留，手动采集不受此开关影响。</Text>
+                </div>
+                <Form.Item label="自动任务总开关" style={{ marginBottom: 16 }}>
                     <Switch checked={runtimeConfig.enabled} onChange={(enabled) => setRuntimeConfig((prev) => ({ ...prev, enabled }))} />
                 </Form.Item>
                 <Form.Item label="开始时间" style={{ marginBottom: 16 }}>
@@ -49,7 +52,7 @@ export default function SystemBasicsCard() {
                 <Form.Item label="结束时间" style={{ marginBottom: 16 }}>
                     <Input value={runtimeConfig.end_time} onChange={(event) => setRuntimeConfig((prev) => ({ ...prev, end_time: event.target.value }))} style={{ width: 100 }} />
                 </Form.Item>
-                <Form.Item label="周期（分钟）" style={{ marginBottom: 16 }}>
+                <Form.Item label="内容处理周期（分钟）" style={{ marginBottom: 16 }}>
                     <InputNumber min={5} max={1440} value={runtimeConfig.interval_minutes} onChange={(value) => setRuntimeConfig((prev) => ({ ...prev, interval_minutes: value }))} />
                 </Form.Item>
                 <Form.Item label="审核批次" style={{ marginBottom: 16 }}>

@@ -1,8 +1,8 @@
 import React, { lazy, Suspense, useState } from 'react';
-import { Alert, ConfigProvider, Layout, Button, Card, Row, Col, Statistic, Segmented, Tabs, Modal } from 'antd';
+import { Alert, ConfigProvider, Layout, Button, Card, Row, Col, Statistic, Segmented, Tabs, Modal, message } from 'antd';
 import { LogoutOutlined, RobotOutlined, DatabaseOutlined, DownloadOutlined, AppstoreOutlined, BellOutlined, CloudUploadOutlined, RadarChartOutlined } from '@ant-design/icons';
 
-import { clearAuthToken } from '../auth/session';
+import { logout } from '../api/auth';
 import { CONTENT_KIND } from '../contracts/content';
 import { useDashboardData } from '../hooks/useDashboardData';
 import DashboardExportModal from '../components/dashboard/DashboardExportModal';
@@ -25,10 +25,12 @@ const AiQualityTab = lazy(() => import('../components/dashboard/AiQualityTab'));
 const PublicationCenterTab = lazy(() => import('../components/dashboard/PublicationCenterTab'));
 const IntelligenceCenterTab = lazy(() => import('../components/dashboard/IntelligenceCenterTab'));
 const SourceOperationsTab = lazy(() => import('../components/dashboard/SourceOperationsTab'));
+const WechatSourceManager = lazy(() => import('../components/dashboard/WechatSourceManager'));
 
 const DashboardContent = () => {
-    const [activeKey, setActiveKey] = useState('1');
+    const [activeKey, setActiveKey] = useState(() => new URLSearchParams(window.location.search).get('tab') === 'wechat' ? 'wechat' : '1');
     const [contentKind, setContentKind] = useState(CONTENT_KIND.NEWS);
+    const [loggingOut, setLoggingOut] = useState(false);
     const {
         stats,
         spiders,
@@ -63,9 +65,16 @@ const DashboardContent = () => {
     };
 
     const handleLogout = () => {
-        runWithUnsavedGuard(() => {
-            clearAuthToken();
-            window.location.href = '/login';
+        runWithUnsavedGuard(async () => {
+            setLoggingOut(true);
+            try {
+                await logout();
+                window.location.href = '/login';
+            } catch (error) {
+                message.error(`退出失败，请重试：${error.message}`);
+            } finally {
+                setLoggingOut(false);
+            }
         });
     };
 
@@ -83,6 +92,11 @@ const DashboardContent = () => {
     const overviewValue = (key) => overviewState.loaded && overview ? overview[key] : '—';
 
     const tabItems = [
+        {
+            key: 'wechat',
+            label: <span><RadarChartOutlined />公众号采集</span>,
+            children: <WechatSourceManager />,
+        },
         {
             key: '1',
             label: <span><DatabaseOutlined />采集池 ({overviewValue('incoming')})</span>,
@@ -192,7 +206,7 @@ const DashboardContent = () => {
                         value={contentKind}
                         onChange={setContentKind}
                     />
-                    <Button type="primary" danger icon={<LogoutOutlined />} onClick={handleLogout}>
+                        <Button type="primary" danger icon={<LogoutOutlined />} onClick={handleLogout} loading={loggingOut}>
                         退出
                     </Button>
                 </div>

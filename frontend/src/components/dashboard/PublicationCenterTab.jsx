@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import dayjs from 'dayjs';
+import SafeReportPreview from './SafeReportPreview';
 import {
     Alert, Button, Card, Checkbox, DatePicker, Form, Input, InputNumber, Modal, Select,
     Space, Switch, Table, Tabs, Tag, Typography, message,
@@ -131,9 +132,9 @@ export default function PublicationCenterTab() {
             message.success('草稿已保存'); setDraftEditing(null); await load();
         } catch (error) { if (!error?.errorFields) message.error(error.message || '草稿保存失败'); }
     };
-    const publishDraft = async (id) => {
+    const publishDraft = async (id, websiteOnly = false) => {
         setBusy(`publish:${id}`);
-        try { const response = await publishPublicationDraft(id); message.success(response.data.status === 'published' ? '草稿已发布' : '已提交，仍有渠道待确认'); setDraftEditing(null); await load(); }
+        try { const response = await publishPublicationDraft(id, { website_only: websiteOnly }); message.success(response.data.status === 'published' ? (websiteOnly ? '已发布到网站' : '草稿已发布') : '已提交，仍有渠道待确认'); setDraftEditing(null); await load(); }
         catch (error) { message.error(error.message || '发布失败'); } finally { setBusy(''); }
     };
     const previewDraft = async (id) => {
@@ -202,7 +203,7 @@ export default function PublicationCenterTab() {
         { title: '标题', render: (_, row) => <><strong>{row.title}</strong><div><Typography.Text type="secondary">{row.publication_name} · {row.item_count} 条</Typography.Text></div></> },
         { title: '状态', dataIndex: 'status', render: (value) => <Tag color={value === 'published' ? 'green' : value === 'publishing' ? 'orange' : value === 'scheduled' ? 'blue' : 'default'}>{value}</Tag> },
         { title: '计划时间', dataIndex: 'scheduled_at', render: (value) => value ? formatLocalDateTime(value) : '—' },
-        { title: '操作', render: (_, row) => <Space><Button loading={busy === `draft-load:${row.id}`} onClick={() => openDraft(row)}>查看</Button><Button loading={busy === `preview:${row.id}`} onClick={() => previewDraft(row.id)}>成稿预览</Button>{row.status !== 'published' && row.status !== 'cancelled' && <Button type="primary" icon={<SendOutlined />} loading={busy === `publish:${row.id}`} onClick={() => publishDraft(row.id)}>发布/重试</Button>}</Space> },
+        { title: '操作', render: (_, row) => <Space wrap><Button loading={busy === `draft-load:${row.id}`} onClick={() => openDraft(row)}>查看</Button><Button loading={busy === `preview:${row.id}`} onClick={() => previewDraft(row.id)}>成稿预览</Button>{['draft', 'scheduled'].includes(row.status) && <Button loading={busy === `publish:${row.id}`} onClick={() => publishDraft(row.id, true)}>仅发布到网站</Button>}{row.status !== 'published' && row.status !== 'cancelled' && <Button type="primary" icon={<SendOutlined />} loading={busy === `publish:${row.id}`} onClick={() => publishDraft(row.id)}>发布/重试</Button>}</Space> },
     ];
     const correctionColumns = [
         { title: '类型', dataIndex: 'correction_type', render: (value) => <Tag color="red">{value}</Tag> },
@@ -239,7 +240,7 @@ export default function PublicationCenterTab() {
         <Modal title={draftPreview?.title || '成稿预览'} open={Boolean(draftPreview)} onCancel={() => setDraftPreview(null)} footer={<Button onClick={() => setDraftPreview(null)}>关闭</Button>} width={760} destroyOnClose>
             {draftPreview && <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                 <Typography.Text type="secondary">{draftPreview.items.length} 条内容 · {draftPreview.parts.length} 个发送分片 · {draftPreview.target_count} 个摘要目标</Typography.Text>
-                <Card><div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.75 }} dangerouslySetInnerHTML={{ __html: draftPreview.content }} /></Card>
+                <Card><SafeReportPreview content={draftPreview.content} /></Card>
             </Space>}
         </Modal>
         <Modal title={subscriptionEditing?.id ? '编辑分析师变更订阅' : '新建分析师变更订阅'} open={Boolean(subscriptionEditing)} onCancel={() => setSubscriptionEditing(null)} onOk={saveSubscription} width={720} destroyOnClose><Form form={subscriptionForm} layout="vertical"><Space wrap><Form.Item name="name" label="名称" rules={[{ required: true }]}><Input style={{ width: 220 }} /></Form.Item><Form.Item name="channel_id" label="Webhook 渠道" rules={[{ required: true }]}><Select style={{ width: 240 }} options={state.channels.filter((item) => item.channel_type === 'webhook').map((item) => ({ value: item.id, label: item.name }))} /></Form.Item><Form.Item name="batch_size" label="每批上限"><InputNumber min={1} max={100} /></Form.Item><Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item></Space><Form.Item name="object_types" label="变更对象" rules={[{ required: true }]}><Checkbox.Group options={[['event', '事件'], ['correction', '更正'], ['entity', '实体'], ['narrative', '叙事'], ['tag', '标签']].map(([value, label]) => ({ value, label }))} /></Form.Item><Form.Item name="content_types" label="内容类型（留空表示全部）"><Checkbox.Group options={[{ value: 'news', label: '快讯' }, { value: 'article', label: '文章' }]} /></Form.Item><Form.Item name="profile_slugs" label="内容档案（留空表示全部）"><Select mode="multiple" options={state.publications.map((item) => ({ value: item.profile_slug, label: item.display_name }))} /></Form.Item>{!subscriptionEditing?.id && <Form.Item name="start_from" label="起始位置"><Select options={[{ value: 'now', label: '从现在开始' }, { value: 'beginning', label: '补发现有变更' }]} /></Form.Item>}</Form></Modal>

@@ -1,6 +1,6 @@
 # Glean 前端
 
-这个目录包含公开内容站和管理后台，使用 React、Vite、Ant Design 与 Axios。公开站位于 `/`，登录页位于 `/login`，后台位于 `/admin`。API 地址由 `.env.development` 或 `.env.production` 中的 `VITE_API_BASE_URL` 决定。
+这个目录包含公开内容站和管理后台，使用 React、Vite、Ant Design 与 Axios。公开站位于 `/`，登录页位于 `/login`，后台位于 `/admin`。API 地址由 `.env.development` 或 `.env.production` 中的 `VITE_API_BASE_URL` 决定。留空时使用同源 `/api`，开发服务器会转发到 `127.0.0.1:8000`；生产环境留空时需要由站点服务器配置 `/api` 反向代理。
 
 要求 Node.js 22。安装与启动：
 

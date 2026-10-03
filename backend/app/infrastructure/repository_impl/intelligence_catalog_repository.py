@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from shared.content_contract import EVENT_TABLE, REVIEW_TABLE
 
 from .base_repository import BaseRepository
+from .public_visibility import published_entry_sql
 
 
 class IntelligenceCatalogRepository(BaseRepository):
@@ -90,7 +91,7 @@ class IntelligenceCatalogRepository(BaseRepository):
 
     def list_entity_events(self, entity_id: int, public_only: bool, limit: int, offset: int) -> Dict:
         public_join = (
-            f"AND EXISTS (SELECT 1 FROM {REVIEW_TABLE} r WHERE r.event_id = e.id AND r.review_status = 'selected' AND r.delivery_status = 'sent')"
+            f"AND EXISTS (SELECT 1 FROM {REVIEW_TABLE} r WHERE r.event_id = e.id AND r.review_status = 'selected' AND {published_entry_sql()})"
             if public_only else ""
         )
         total = self.execute(
@@ -221,7 +222,7 @@ class IntelligenceCatalogRepository(BaseRepository):
               AND EXISTS (
                 SELECT 1 FROM {REVIEW_TABLE} r
                 WHERE r.event_id = e.id AND r.review_status = 'selected'
-                  AND r.delivery_status = 'sent'
+                  AND {published_entry_sql()}
               )
             GROUP BY date(e.last_seen_at) ORDER BY date(e.last_seen_at)
             """,
@@ -232,7 +233,7 @@ class IntelligenceCatalogRepository(BaseRepository):
 
     def list_narrative_events(self, narrative_id: int, public_only: bool, limit: int, offset: int) -> Dict:
         public_join = (
-            f"AND EXISTS (SELECT 1 FROM {REVIEW_TABLE} r WHERE r.event_id = e.id AND r.review_status = 'selected' AND r.delivery_status = 'sent')"
+            f"AND EXISTS (SELECT 1 FROM {REVIEW_TABLE} r WHERE r.event_id = e.id AND r.review_status = 'selected' AND {published_entry_sql()})"
             if public_only else ""
         )
         total = self.execute(

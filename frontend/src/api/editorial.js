@@ -51,8 +51,8 @@ export const updatePublicationDraft = (draftId, data) =>
 export const previewPublicationDraft = (draftId) =>
     requestOperation('previewPublicationDraft', { path: { draftId } });
 
-export const publishPublicationDraft = (draftId) =>
-    requestOperation('publishPublicationDraft', { path: { draftId } });
+export const publishPublicationDraft = (draftId, params = {}) =>
+    requestOperation('publishPublicationDraft', { path: { draftId }, params });
 
 export const publishDueDrafts = (params = {}) =>
     requestOperation('publishDueDrafts', { params });

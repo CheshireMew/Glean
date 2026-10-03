@@ -12,6 +12,8 @@ from .repository_impl.archive_repository import ArchiveRepository
 from .repository_impl.archive_query_repository import ArchiveQueryRepository
 from .repository_impl.blacklist_repository import BlacklistRepository
 from .repository_impl.config_repository import ConfigRepository
+from .repository_impl.auth_repository import AuthRepository
+from .repository_impl.wechat_repository import WechatRepository
 from .repository_impl.content_query_repository import ContentQueryRepository
 from .repository_impl.daily_report_repository import DailyReportRepository
 from .repository_impl.delivery_execution_repository import DeliveryExecutionRepository
@@ -42,6 +44,7 @@ from .repository_impl.source_operations_repository import SourceOperationsReposi
 from .repository_impl.tag_repository import TagRepository
 
 from .database import database
+from .repository_impl.ai_content_repository import AIContentRepository
 from .lease_fencing import assert_current_operation_lease
 
 
@@ -52,8 +55,11 @@ class RepositoryUnitOfWork:
         source = conn or database
         self.connection = conn
         self.config = ConfigRepository(source)
+        self.auth = AuthRepository(source)
+        self.wechat = WechatRepository(source)
         self.content_queries = ContentQueryRepository(source, database.connect)
         self.news = NewsRepository(source)
+        self.ai_content = AIContentRepository(source)
         self.news_admin = NewsAdminRepository(source)
         self.news_runtime = NewsRuntimeRepository(source)
         self.maintenance = MaintenanceRepository(source)

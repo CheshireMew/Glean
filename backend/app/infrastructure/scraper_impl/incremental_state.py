@@ -65,6 +65,7 @@ def should_stop_scraping(scraper, news_title: str, news_url: str, news_time: dat
     if not known:
         scraper._consecutive_known_items = 0
         return False
+    scraper.encountered_existing_items = True
     scraper._consecutive_known_items = getattr(scraper, "_consecutive_known_items", 0) + 1
     print(f"[增量抓取] 匹配到历史记录，连续 {scraper._consecutive_known_items} 条")
     return scraper._consecutive_known_items >= 3

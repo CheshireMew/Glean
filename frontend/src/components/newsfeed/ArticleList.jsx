@@ -3,7 +3,17 @@ import { formatLocalDate } from '../../utils/time';
 import VirtualWindowList from './VirtualWindowList';
 import { Link } from 'react-router-dom';
 
+function sourcePreview(content = '') {
+    const paragraphs = content.split(/\r?\n+/).map((text) => text.trim()).filter(Boolean);
+    const characters = Array.from(paragraphs.slice(0, 2).join('\n\n'));
+    return paragraphs.length > 2 || characters.length > 200
+        ? `${characters.slice(0, 199).join('').trimEnd()}…`
+        : characters.join('');
+}
+
 export function ArticleItem({ item, index }) {
+    const isSourceRecord = Object.hasOwn(item, 'source_excerpt');
+    const excerpt = isSourceRecord ? sourcePreview(item.source_excerpt || '') : '';
     return (
         <div className="flex gap-4 px-6 py-5 hover:bg-gray-50 transition group dark:hover:bg-gray-800/50">
             <div className="hidden md:block text-gray-300 font-medium text-lg min-w-[20px] dark:text-gray-600">{index}</div>
@@ -15,7 +25,9 @@ export function ArticleItem({ item, index }) {
                         <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="font-bold text-black group-hover:text-blue-600 transition-colors dark:text-gray-200 dark:group-hover:text-blue-400">{item.title}</a>
                     )}
                 </h3>
-                {(item.enriched_summary || item.review_summary) && (
+                {isSourceRecord ? (excerpt ? (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-gray-500 dark:text-gray-400">{excerpt}</p>
+                ) : null) : (item.enriched_summary || item.review_summary) && (
                     <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400 line-clamp-2">{item.enriched_summary || item.review_summary}</p>
                 )}
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400 mt-2 dark:text-gray-500">
@@ -23,7 +35,7 @@ export function ArticleItem({ item, index }) {
                     <span className="text-gray-500 dark:text-gray-500 truncate">{item.source_site}</span>
                     <span className="whitespace-nowrap">{formatLocalDate(item.published_at)}</span>
                     {item.source_count > 1 && <span className="text-blue-600 dark:text-blue-400">{item.source_count} 个来源</span>}
-                    {item.event_id && <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600">阅读原文</a>}
+                    {(item.event_id || isSourceRecord) && <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-600">阅读原文</a>}
                 </div>
             </div>
         </div>

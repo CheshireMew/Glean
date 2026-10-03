@@ -11,6 +11,15 @@ _sink: ContextVar[Callable[[str], None] | None] = ContextVar("task_output_sink",
 _buffer: ContextVar[str] = ContextVar("task_output_buffer", default="")
 
 
+def _emit(sink, line: str) -> None:
+    # The sink may log to stderr itself. Do not capture that log recursively.
+    token = _sink.set(None)
+    try:
+        sink(line)
+    finally:
+        _sink.reset(token)
+
+
 class _ContextOutput(io.TextIOBase):
     def __init__(self, original):
         self.original = original
@@ -30,7 +39,7 @@ class _ContextOutput(io.TextIOBase):
         for line in lines:
             normalized = line.rstrip("\r")
             if normalized:
-                sink(normalized)
+                _emit(sink, normalized)
         return written
 
     def flush(self) -> None:
@@ -56,7 +65,7 @@ def capture_task_output(sink: Callable[[str], None]) -> Iterator[None]:
         yield
     finally:
         trailing = _buffer.get().strip()
-        if trailing:
-            sink(trailing)
         _buffer.reset(buffer_token)
         _sink.reset(sink_token)
+        if trailing:
+            _emit(sink, trailing)

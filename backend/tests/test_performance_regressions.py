@@ -9,6 +9,7 @@ import sys
 import statistics
 import time
 import unittest
+from datetime import datetime, timezone
 
 from backend.app.infrastructure.event_clustering import EventClusterer
 from backend.app.infrastructure.repository_impl.review_public_repository import ReviewPublicRepository
@@ -97,16 +98,17 @@ class PerformanceRegressionTest(unittest.TestCase):
         try:
             create_current_schema(connection.cursor())
             connection.commit()
+            current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             rows = [
                 (
                     f"{'OpenAI' if index % 100 == 0 else 'Market'} report {index}",
                     "Body text",
                     "example",
                     f"https://example.test/search/{index}",
-                    "2026-08-24 10:00:00",
-                    "2026-08-24 10:00:00",
-                    "2026-08-24 10:00:00",
-                    "2026-08-24 10:00:00",
+                    current_time,
+                    current_time,
+                    current_time,
+                    current_time,
                     "news",
                     "daily-briefs",
                     "selected",
@@ -369,6 +371,10 @@ class ScraperPerformanceRegressionTest(unittest.IsolatedAsyncioTestCase):
 
         def require_scraper(self, _name):
             return self.definition
+
+        @staticmethod
+        def get_source_cooldown(_name):
+            return {}
 
         @staticmethod
         def append_log(_name, _message):

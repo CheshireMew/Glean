@@ -10,9 +10,56 @@ class ExtensibleResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class AISourceData(BaseModel):
+    key: str
+    name: str
+    site_url: str
+    total: int
+    last_collected_at: str | None
+
+
+class AISourceItem(BaseModel):
+    id: int
+    title: str
+    source_key: str
+    source_site: str
+    source_url: str
+    source_excerpt: str
+    original_title: str
+    translated: bool
+    published_at: str | None
+    scraped_at: str | None
+    author: str | None
+
+
+class AIContentData(BaseModel):
+    items: list[AISourceItem]
+    sources: list[AISourceData]
+    total: int
+    limit: int
+    offset: int
+
+
+class AIRefreshSourceData(BaseModel):
+    key: str
+    name: str
+    status: str
+    message: str = ""
+
+
+class AIRefreshData(BaseModel):
+    updating: bool
+    message: str = ""
+    sources: list[AIRefreshSourceData]
+
+
 class TokenData(BaseModel):
     access_token: str
     token_type: str
+
+
+class AuthSessionData(BaseModel):
+    username: str
 
 
 class TimezoneData(BaseModel):
@@ -90,6 +137,22 @@ class RssSourceData(ExtensibleResponse):
     default_limit: int
     default_interval: int
     enabled: bool
+
+
+class RssPreviewItem(BaseModel):
+    title: str
+    content: str
+    url: str
+    author: str
+    published_at: str
+    content_origin: str = "feed"
+    completeness: str = "unknown"
+
+
+class RssPreviewData(BaseModel):
+    feed_url: str
+    items: list[RssPreviewItem]
+    notice: str
 
 
 class RssSourcesData(BaseModel):
@@ -281,6 +344,8 @@ class ScraperRuntimeData(ExtensibleResponse):
     items_scraped: int = 0
     limit: int | None = None
     interval: int | None = None
+    cooldown_until: float | None = None
+    cooldown_reason: str | None = None
 
 
 class ScraperCommandData(ExtensibleResponse):
@@ -293,7 +358,7 @@ class ScraperCommandData(ExtensibleResponse):
 
 class ScraperConfigData(BaseModel):
     status: str
-    config: dict[str, int | str]
+    config: dict[str, int | str | None]
 
 
 class DeliveryOperationData(ExtensibleResponse):

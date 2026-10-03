@@ -18,6 +18,13 @@ const STATUS_LABELS = {
 const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, onConfigChange }) => {
     const isRunning = status.status === 'running';
     const isBusy = status.status === 'queued' || isRunning;
+    const [clock, setClock] = useState(() => Date.now());
+    const coolingDown = Boolean(status.cooldown_until && status.cooldown_until * 1000 > clock);
+    useEffect(() => {
+        const delay = Math.min(2147483647, Math.max(0, (status.cooldown_until || 0) * 1000 - Date.now() + 1));
+        const timer = setTimeout(() => setClock(Date.now()), delay);
+        return () => clearTimeout(timer);
+    }, [status.cooldown_until]);
 
     // Optimistic UI: Initialize with props, but allow immediate local input
     // Default to 20 to match backend default configuration
@@ -78,7 +85,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
         <Col xs={24} md={12} xl={8}>
             <Card
                 title={displayName}
-                extra={<Tag color={isRunning ? 'processing' : (status.status === 'error' ? 'error' : 'success')}>{STATUS_LABELS[status.status] || '状态未知'}</Tag>}
+                extra={<Tag color={coolingDown ? 'warning' : (isRunning ? 'processing' : (status.status === 'error' ? 'error' : 'success'))}>{coolingDown ? '冷却中' : STATUS_LABELS[status.status] || '状态未知'}</Tag>}
             >
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
                     <span style={{ fontSize: 12 }}>限制条数:</span>
@@ -99,17 +106,17 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                     </Select>
 
 
-                    <span style={{ fontSize: 12 }}>频率:</span>
+                    {!status.refresh_on_view && <><span style={{ fontSize: 12 }}>自动采集频率:</span>
                     <Select
                         listHeight={180}
                         value={localInterval}
-                        style={{ width: 90 }}
+                        style={{ width: 110 }}
                         size="small"
                         loading={savingConfig === 'interval'}
                         disabled={Boolean(savingConfig)}
                         onChange={(val) => handleConfigUpdate('interval', val)}
                     >
-                        <Option value="manual">手动</Option>
+                        <Option value="manual">仅手动</Option>
                         {/* 文章爬虫使用不同的频率选项（包括foresight专栏和article后缀的爬虫） */}
                         {contentKind === 'article' ? (
                             <>
@@ -130,7 +137,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                                 <Option value="300">5小时</Option>
                             </>
                         )}
-                    </Select>
+                    </Select></>}
 
                     {isBusy ? (
                         <Button
@@ -148,12 +155,18 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                             size="small"
                             icon={<PlayCircleOutlined />}
                             loading={isBusy}
+                            disabled={coolingDown}
                             onClick={() => onRun(name, localLimit)}
                         >
                             运行
                         </Button>
                     )}
                 </div>
+
+                <p style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
+                    {status.refresh_on_view ? '随 AI 资讯页面自动更新，同一来源 5 分钟内复用结果，不受定时采集总开关影响。' : '自动采集还需在系统设置中开启总开关。选择“仅手动”会停止本来源的自动采集。'}
+                </p>
+                {coolingDown && <p style={{ fontSize: 12, color: '#ad6800' }}>{status.cooldown_reason}</p>}
 
                 <div
                     ref={logContainerRef}

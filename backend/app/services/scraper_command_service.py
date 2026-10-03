@@ -27,7 +27,7 @@ class ScraperCommandService:
         self._expected_worker_version = expected_worker_version
         self.worker_id: str | None = None
 
-    async def request_run(self, name: str, items: int) -> Dict:
+    async def request_run(self, name: str, items: int, *, freshness_seconds=None, trigger="manual") -> Dict:
         with self._transaction() as tx_repos:
             worker = tx_repos.runtime_leases.get("worker")
             if (
@@ -39,10 +39,34 @@ class ScraperCommandService:
                 raise ServiceUnavailableError("后台 Worker 未运行，暂时不能接受爬虫任务")
             self._runtime_state.ensure_runtime_initialized()
             self._runtime_state.require_scraper(name)
+            if not self._scraper_runs.source_enabled(name):
+                raise ConflictError("来源已停用，请先启用该来源")
+            cooldown = self._runtime_state.get_source_cooldown(name)
+            if cooldown:
+                raise ConflictError(cooldown["cooldown_reason"])
             state = self._runtime_state.get_scraper_state(name)
             if state.get("status") in {"queued", "running"} or tx_repos.scraper_commands.has_pending_command(name, "run"):
+                if freshness_seconds is not None:
+                    return {"status": "updating"}
                 raise ConflictError(f"爬虫 {name} 已在排队或运行")
-            command_id = tx_repos.scraper_commands.enqueue_command(name, "run", {"items": items})
+            now = datetime.now(timezone.utc)
+            if freshness_seconds is not None:
+                # Persist the attempt as well as the completed run so multiple
+                # tabs and process restarts cannot repeatedly enqueue failures.
+                requested = tx_repos.config.get_config(f"ai.refresh.{name}")
+                for value in (requested, state.get("last_run")):
+                    try:
+                        previous = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        if previous.tzinfo is None:
+                            previous = previous.replace(tzinfo=timezone.utc)
+                    except (AttributeError, ValueError):
+                        continue
+                    if (now - previous).total_seconds() < freshness_seconds:
+                        return {"status": "error" if state.get("status") == "error" else "fresh",
+                                "message": state.get("last_error") or ""}
+            command_id = tx_repos.scraper_commands.enqueue_command(name, "run", {"items": items, "trigger": trigger})
+            if freshness_seconds is not None:
+                tx_repos.config.set_config(f"ai.refresh.{name}", now.isoformat())
             self._runtime_state.set_scraper_state(
                 name,
                 {"status": "queued", "queued_at": datetime.now(timezone.utc).isoformat(), "items_scraped": 0},
@@ -102,9 +126,15 @@ class ScraperCommandService:
                             command.get("payload", {}).get("items")
                             or self._runtime_state.get_scraper_config(scraper_name).get("limit", 5)
                         )
-                        launched = self._scraper_runs.launch_scraper(scraper_name, items)
+                        launch_kwargs = {"trigger": "ai-view"} if command.get("payload", {}).get("trigger") == "ai-view" else {}
+                        launched = self._scraper_runs.launch_scraper(scraper_name, items, **launch_kwargs)
                         if not launched:
                             tx_repos.scraper_commands.fail_command(command_id, "Scraper state could not be claimed")
+                            if self._runtime_state.get_scraper_state(scraper_name).get("status") == "queued":
+                                self._runtime_state.set_scraper_state(scraper_name, {
+                                    "status": "idle", "queued_at": None,
+                                    "last_result": "采集未启动：来源已停用或运行条件不满足",
+                                })
                             return
                     tx_repos.scraper_commands.complete_command(command_id, "Run request started")
                     return
@@ -116,7 +146,8 @@ class ScraperCommandService:
                     elif cancelled:
                         self._runtime_state.set_scraper_state(
                             scraper_name,
-                            {"status": "idle", "queued_at": None, "start_time": None, "last_result": "Cancelled before start"},
+                            {"status": "idle", "queued_at": None, "start_time": None,
+                             "last_run": datetime.now(timezone.utc).isoformat(), "last_result": "Cancelled before start"},
                         )
                         self._runtime_state.append_log(scraper_name, "Pending run cancelled")
                         tx_repos.scraper_commands.complete_command(command_id, "Pending run cancelled")
@@ -128,6 +159,11 @@ class ScraperCommandService:
         except Exception as exc:
             with self._transaction() as tx_repos:
                 tx_repos.scraper_commands.fail_command(command_id, str(exc))
+                if self._runtime_state.get_scraper_state(scraper_name).get("status") == "queued":
+                    self._runtime_state.set_scraper_state(scraper_name, {
+                        "status": "error", "queued_at": None,
+                        "last_result": "采集启动失败", "last_error": str(exc),
+                    })
             raise
 
     def prepare_worker(self, worker_id: str) -> Dict:

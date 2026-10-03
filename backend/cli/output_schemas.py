@@ -239,6 +239,11 @@ def command_output_schemas() -> dict[str, dict[str, Any]]:
             required=("stats",),
         ),
         "content.list": PAGE,
+        "content.translate-ai": _object(
+            {"translated": INTEGER, "failed": INTEGER, "batches": INTEGER, "model": STRING,
+             "input_tokens": INTEGER, "output_tokens": INTEGER, "reasoning_tokens": INTEGER, "errors": ITEMS},
+            required=("translated", "failed", "batches", "model", "input_tokens", "output_tokens", "reasoning_tokens", "errors"),
+        ),
         "content.export": _object(
             {"path": STRING, "count": INTEGER, "bytes": INTEGER, "sha256": STRING},
             required=("path", "count", "bytes", "sha256"),
@@ -392,6 +397,10 @@ def command_output_schemas() -> dict[str, dict[str, Any]]:
         "profile.list": _object({"profiles": _array(PROFILE)}, required=("profiles",)),
         "profile.save": PROFILE,
         "rss.list": _object({"sources": _array(RSS_SOURCE)}, required=("sources",)),
+        "rss.preview": _object({"feed_url": STRING, "notice": STRING, "items": _array(_object({
+            "title": STRING, "content": STRING, "url": STRING, "author": STRING,
+            "published_at": STRING, "content_origin": STRING, "completeness": STRING,
+        }, required=("title", "content", "url", "author", "published_at", "content_origin", "completeness")))}, required=("feed_url", "notice", "items")),
         "rss.create": RSS_SOURCE,
         "rss.update": RSS_SOURCE,
         "analyst-key.list": _object({"items": ITEMS}, required=("items",)),

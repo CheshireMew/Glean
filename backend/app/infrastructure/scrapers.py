@@ -12,6 +12,10 @@ from .scraper_impl.foresight_article import (
     ForesightExclusiveScraper,
     ForesightExpressScraper,
 )
+from .scraper_impl.hacker_news import HackerNewsScraper
+from .scraper_impl.lobsters import LobstersScraper
+from .scraper_impl.waytoagi import WaytoAGIScraper
+from .scraper_impl.juejin_ai import JuejinAIScraper
 from .scraper_impl.marsbit import MarsBitScraper
 from .scraper_impl.marsbit_article import MarsBitArticleScraper
 from .scraper_impl.odaily import OdailyScraper
@@ -30,6 +34,8 @@ class ScraperDefinition:
     content_kind: str
     default_limit: int
     default_interval: int
+    homepage_url: str | None = None
+    authority_type: str = "media"
 
     def display_name(self) -> str:
         try:
@@ -61,6 +67,14 @@ class ScraperCatalog:
             ScraperDefinition("panews_article", PANewsArticleScraper, "article", 20, 240),
             ScraperDefinition("techflow_article", TechflowArticleScraper, "article", 20, 240),
             ScraperDefinition("wublock_article", WuBlockArticleScraper, "article", 20, 240),
+            ScraperDefinition("hacker_news", HackerNewsScraper, "article", 30, 60,
+                              "https://news.ycombinator.com/", "aggregator"),
+            ScraperDefinition("lobsters", LobstersScraper, "article", 20, 240,
+                              "https://lobste.rs/recent", "aggregator"),
+            ScraperDefinition("waytoagi", WaytoAGIScraper, "article", 100, 240,
+                              "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e", "aggregator"),
+            ScraperDefinition("juejin_ai", JuejinAIScraper, "article", 20, 240,
+                              "https://juejin.cn/ai", "aggregator"),
         ]
         self._items = {item.name: item for item in definitions}
 

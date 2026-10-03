@@ -224,8 +224,16 @@ def _page_arguments():
     )
 
 
+async def translate_ai_handler(ctx, args, payload):
+    return await ctx.services.ai_translation.translate_pending(args.source, _bounded(args.limit, "limit", 1, 1000))
+
+
 def command_specs():
     return [
+        CommandSpec(
+            "content.translate-ai", ("content", "translate-ai"), "批量翻译 AI 资讯的英文标题和已有正文片段，复用已存译文",
+            translate_ai_handler, arguments=(arg("--source"), arg("--limit", type=int, default=100)),
+        ),
         CommandSpec(
             "content.overview",
             ("content", "overview"),

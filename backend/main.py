@@ -10,6 +10,7 @@ from backend.app.core.config import settings
 from backend.app.core.errors import api_exception_handler, global_exception_handler, http_exception_handler, validation_exception_handler
 from backend.app.core.exceptions import APIException
 from backend.app.composition import app_services
+from backend.app.routers import wechat
 from backend.app.infrastructure.database import init_database
 from backend.app.infrastructure.repositories import repository_session
 from backend.app.routers import ai_quality, auth, config, delivery, editorial, integrations, intelligence, market_intelligence, news, pipeline, public_content, publications, source_operations, spiders
@@ -22,12 +23,13 @@ logger = getLogger("uvicorn")
 async def lifespan(app: FastAPI):
     settings.validate()
     init_database()
-    app_services.auth().migrate_database_password()
+    app_services.credentials.initialize()
     app_services.scraper_runtime_state.ensure_runtime_initialized()
     logger.info("Database initialized")
     try:
         yield
     finally:
+        await app_services.wechat_sources.cancel_login()
         logger.info("Shutting down...")
 
 
@@ -77,6 +79,7 @@ app.include_router(auth.router, prefix="/api", tags=["Auth"])
 app.include_router(news.router, prefix="/api", tags=["News"])
 app.include_router(public_content.router, prefix="/api", tags=["Public Content"])
 app.include_router(config.router, prefix="/api", tags=["Config"])
+app.include_router(wechat.router, prefix='/api', tags=['Wechat'])
 app.include_router(spiders.router, prefix="/api", tags=["Spiders"])
 app.include_router(pipeline.router, prefix="/api", tags=["Content Pipeline"])
 app.include_router(delivery.router, prefix="/api", tags=["Delivery"])
@@ -117,4 +120,4 @@ def pipeline_readiness_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True, proxy_headers=False)

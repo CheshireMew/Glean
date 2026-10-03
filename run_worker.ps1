@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 
 $workerPattern = '(?i)(python(?:\.exe)?|py(?:\.exe)?)"?\s+-m\s+backend\.worker(?:\s|$)'
@@ -12,5 +12,6 @@ if ($existing) {
 
 $python = if (Test-Path -LiteralPath 'D:\Tools\Python310\python.exe') { 'D:\Tools\Python310\python.exe' } else { 'python' }
 $env:GLEAN_ENV = 'development'
+$Host.UI.RawUI.WindowTitle = 'Glean Worker'
 Write-Host "Starting Glean worker in development mode..." -ForegroundColor Cyan
 & $python -m backend.worker

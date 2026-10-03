@@ -43,8 +43,12 @@ export default defineConfig({
     },
   },
   server: {
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+    },
     fs: {
-      allow: [path.resolve(rootDir, '..')],
+      allow: [rootDir, path.resolve(rootDir, '../shared/content_contract.json')],
+      deny: ['.env', '.env.*', '**/.git/**', '*.{crt,pem}', '**/*.db*', '**/*.sqlite*'],
     },
   },
   test: {

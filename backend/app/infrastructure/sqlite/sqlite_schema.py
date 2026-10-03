@@ -31,6 +31,31 @@ from shared.content_contract import (
 from .sqlite_support import column_exists, ensure_column, sql_string_list
 
 
+def create_news_translations_table(cursor: sqlite3.Cursor) -> None:
+    cursor.execute("""CREATE TABLE IF NOT EXISTS news_translations (
+        news_id INTEGER PRIMARY KEY REFERENCES news(id) ON DELETE CASCADE,
+        source_title TEXT NOT NULL,
+        source_content_prefix TEXT NOT NULL,
+        title_zh TEXT NOT NULL DEFAULT '',
+        excerpt_zh TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL,
+        translated_at TEXT NOT NULL
+    )""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS news_translation_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source_key TEXT NOT NULL,
+        model TEXT NOT NULL,
+        item_count INTEGER NOT NULL,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        reasoning_tokens INTEGER,
+        success INTEGER NOT NULL,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        completed_at TEXT NOT NULL
+    )""")
+
+
 def create_news_table(cursor: sqlite3.Cursor) -> None:
     cursor.execute(
         f"""

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from .base_repository import BaseRepository
+from ...domain.ai_sources import ai_source_sql
 
 
 class DailyReportRepository(BaseRepository):
@@ -79,6 +80,8 @@ class DailyReportRepository(BaseRepository):
         offset: int,
         query: str | None = None,
         publication_id: int | None = None,
+        *,
+        public_only: bool = False,
     ) -> Dict:
         params: List[object] = []
         where_parts: List[str] = []
@@ -93,6 +96,13 @@ class DailyReportRepository(BaseRepository):
         if publication_id is not None:
             where_parts.append("publication_id = ?")
             params.append(publication_id)
+        if public_only:
+            where_parts.append("""(draft_id IS NULL OR EXISTS (
+                SELECT 1 FROM publication_drafts d WHERE d.id = daily_reports.draft_id AND d.status = 'published'
+            ))""")
+            where_parts.append(f"""NOT EXISTS (
+                SELECT 1 FROM daily_report_items i WHERE i.report_id = daily_reports.id AND {ai_source_sql('i.source_site')}
+            )""")
 
         where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
         total_cursor = self.execute(f"SELECT COUNT(*) as total FROM daily_reports {where_clause}", tuple(params))

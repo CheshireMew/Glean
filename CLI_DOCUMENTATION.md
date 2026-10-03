@@ -6,6 +6,8 @@ Glean CLI 是供 Codex、Claude Code 等外部 Agent 使用的本机管理入口
 
 ## 调用方式
 
+AI 资讯在采集后自动将英文标题和已有正文/摘要前 600 字符合并翻译，每批最多 10 条。历史记录可运行 `python -m backend.cli content translate-ai --limit 100`，或加 `--source hacker_news` 指定来源。命令从运行环境读取 `DEEPSEEK_API_KEY`，使用 `deepseek-flash` 非思考模式；已存译文自动跳过。返回翻译数量、失败数量、批次数和实际输入/输出/思考 token 数，不需要开启审核、日报或推送流程。
+
 推荐从项目根目录运行：
 
 ```powershell
@@ -117,7 +119,7 @@ Get-Content -Raw D:\Config\glean-telegram.json | .\glean.ps1 config telegram set
 .\glean.ps1 config review get|set --kind news|article
 ```
 
-`system credentials` 的 JSON 使用 `current_password`、可选的 `new_username` 和 `new_password`。管理员账号由环境变量管理时，现有 service 会拒绝数据库修改。
+`system credentials` 的 JSON 使用 `current_password`、可选的 `new_username` 和 `new_password`，至少修改一项。新密码需要 12–256 个字符，不能过于简单或与当前密码相同。账号始终由数据库管理，环境变量只用于首次初始化；修改成功会使全部旧登录失效。首次设置或忘记密码时，在项目根目录运行 `python -m backend.reset_admin`，按隐藏输入提示设置新密码；无需修改数据库或把密码写进命令参数。
 
 ### 内容和公开读取
 
@@ -215,11 +217,14 @@ Get-Content -Raw D:\Config\glean-telegram.json | .\glean.ps1 config telegram set
 .\glean.ps1 draft update 12 --input draft-update.json
 .\glean.ps1 draft preview 12
 .\glean.ps1 draft publish 12 --yes
+.\glean.ps1 draft publish 12 --website-only --yes
 .\glean.ps1 draft publish-due --limit 100 --yes
 .\glean.ps1 correction list
 .\glean.ps1 correction create --input correction.json
 .\glean.ps1 correction publish 9 --yes
 ```
+
+没有配置 AI 审核或外部投递渠道时，可通过 `editorial update` 填写摘要、入选依据并设置 `review_status: selected`，随后创建草稿并执行 `draft publish ID --website-only --yes`。网站发布要求公开且启用的频道，只写入站内报告和公开条目，不发送外部消息，也不改变外部投递状态。后台的“人工审核”和“仅发布到网站”按钮提供相同入口。
 
 发布频道可设置公开路径、RSS、摘要频率、时间、时区、模板和投递目标。模板支持 `title_prefix`、`title_suffix`、`intro`、`footer` 和周报 `weekday`。渠道类型支持 `telegram`、`email`、`discord`、`slack` 和 `webhook`，具体配置见 [`INTELLIGENCE_WORKFLOWS.md`](INTELLIGENCE_WORKFLOWS.md)。`draft preview` 使用实际发布排版器但不发送或创建交付记录。草稿和更正都使用持久化交付状态机；重试不会重新发送已经确认成功的分段。
 
@@ -316,3 +321,19 @@ CLI 从不进行交互式 y/N 询问。以下操作缺少 `--yes` 时会在调�
 - 分析师 Webhook 变更投递。
 
 `--yes` 只确认这一次命令，不改变项目配置，也不会绕过 service 自身的状态、事务、租约或幂等检查。
+
+## RSS 接入前预览
+
+在“系统配置”的 RSS 来源表单中填写 RSS 地址和解析方式，点击“预览内容”，即可查看最多 3 条条目的作者、时间、原文链接和订阅源正文。无需先填写名称或保存来源。修改地址或解析方式会清除旧预览；失败后可以重试。
+
+预览不创建来源、不写入内容池、不触发审核或投递。内容来自 RSS/Atom 本身，完整性显示为未知；不会将节选宣称为全文，也不自动访问付费正文。正式 RSS 采集保留源提供的正文与段落，不再截取前 500 字符；原有记录不会自动补全文。AI 初筛发送当前审核条目保存的全部正文，不再截取前 1,200 字符；这不意味着已取得原网站全文。
+
+长文审核会使用更多输入 Token。正文超过所配置模型的上下文容量时，沿用现有端点故障切换和错误记录，条目保留待处理，不自动裁掉后文或按低质量舍弃。旧审核结果不会自动重跑。入选后的内容补充仍采用原有来源摘录方式，本次仅增强初筛读取范围。
+
+CLI 同样支持预览，且不需要数据库初始化或 worker：
+
+```powershell
+'{"feed_url":"https://example.substack.com/feed","parser_type":"generic","limit":3}' | .\glean.ps1 rss preview --input -
+```
+
+`limit` 为 1–5，默认 3。输出包含 `feed_url`、`notice`、`items`，条目包含 `title`、`author`、`published_at`、`url`、`content`、`content_origin=feed` 和 `completeness=unknown`。HTTP 入口为需要登录的 `POST /api/rss/preview`，输入与 CLI 一致。预览成功不代表正式启用后不会进入既有自动流程，保存来源仍按原有配置运行。

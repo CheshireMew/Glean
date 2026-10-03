@@ -34,6 +34,7 @@ from .sqlite_schema import (
     create_intelligence_extension_schema,
     create_keyword_blacklist_table,
     create_news_table,
+    create_news_translations_table,
     create_review_table,
     create_search_indexes,
     create_public_revision_tracking,
@@ -46,13 +47,23 @@ from .sqlite_schema import (
     seed_tags,
 )
 from .sqlite_support import version_key
+from .source_presets import seed_ai_rss_sources, seed_curated_rss_sources
+from .wechat_schema import create_wechat_schema
+from .auth_schema import create_auth_schema
 
 
 LEGACY_BASELINE_VERSION = "2026.08.12.1"
 WORKER_RUNTIME_VERSION = "2026.08.23.1"
 PERFORMANCE_SCHEMA_VERSION = "2026.08.24.1"
 INTELLIGENCE_FOUNDATION_VERSION = "2026.08.24.2"
-SCHEMA_VERSION = "2026.08.25.1"
+INTELLIGENCE_WORKFLOWS_VERSION = "2026.08.25.1"
+AI_NEWS_SOURCES_VERSION = "2026.09.26.1"
+AI_TRANSLATIONS_VERSION = "2026.09.27.1"
+WECHAT_VERSION = "2026.09.27.2"
+AUTH_VERSION = "2026.09.27.3"
+V2EX_VERSION = "2026.09.27.4"
+JUEJIN_WEEKLY_VERSION = "2026.09.27.5"
+SCHEMA_VERSION = "2026.10.03.1"
 
 
 @dataclass(frozen=True)
@@ -64,7 +75,10 @@ class MigrationStep:
 
 
 def _create_current_schema(cursor: sqlite3.Cursor) -> None:
+    create_auth_schema(cursor)
+    create_wechat_schema(cursor)
     create_news_table(cursor)
+    create_news_translations_table(cursor)
     ensure_news_columns(cursor)
     create_event_tables(cursor)
     create_editorial_profiles_table(cursor)
@@ -85,6 +99,8 @@ def _create_current_schema(cursor: sqlite3.Cursor) -> None:
     create_domain_validation_triggers(cursor)
     migrate_legacy_config(cursor)
     seed_default_rss_sources(cursor)
+    seed_ai_rss_sources(cursor)
+    seed_curated_rss_sources(cursor)
     seed_tags(cursor)
 
 
@@ -181,8 +197,50 @@ MIGRATION_STEPS = (
     MigrationStep(
         name="intelligence-workflow-completion",
         from_version=INTELLIGENCE_FOUNDATION_VERSION,
-        to_version=SCHEMA_VERSION,
+        to_version=INTELLIGENCE_WORKFLOWS_VERSION,
         apply=_complete_intelligence_workflows,
+    ),
+    MigrationStep(
+        name="ai-news-rss-sources",
+        from_version=INTELLIGENCE_WORKFLOWS_VERSION,
+        to_version=AI_NEWS_SOURCES_VERSION,
+        apply=seed_ai_rss_sources,
+    ),
+    MigrationStep(
+        name="ai-news-chinese-translations",
+        from_version=AI_NEWS_SOURCES_VERSION,
+        to_version=AI_TRANSLATIONS_VERSION,
+        apply=create_news_translations_table,
+    ),
+    MigrationStep(
+        name="wechat-public-accounts",
+        from_version=AI_TRANSLATIONS_VERSION,
+        to_version=WECHAT_VERSION,
+        apply=create_wechat_schema,
+    ),
+    MigrationStep(
+        name="admin-sessions-and-login-limits",
+        from_version=WECHAT_VERSION,
+        to_version=AUTH_VERSION,
+        apply=create_auth_schema,
+    ),
+    MigrationStep(
+        name="v2ex-tech-subscription",
+        from_version=AUTH_VERSION,
+        to_version=V2EX_VERSION,
+        apply=seed_ai_rss_sources,
+    ),
+    MigrationStep(
+        name="juejin-weekly-subscription",
+        from_version=V2EX_VERSION,
+        to_version=JUEJIN_WEEKLY_VERSION,
+        apply=seed_ai_rss_sources,
+    ),
+    MigrationStep(
+        name="curated-rss-subscriptions",
+        from_version=JUEJIN_WEEKLY_VERSION,
+        to_version=SCHEMA_VERSION,
+        apply=seed_curated_rss_sources,
     ),
 )
 

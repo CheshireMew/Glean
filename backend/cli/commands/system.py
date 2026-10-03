@@ -60,7 +60,7 @@ def init_handler(ctx, args, payload):
     existed = database_path.exists()
     ctx.settings.validate()
     init_database()
-    ctx.services.auth().migrate_database_password()
+    ctx.services.credentials.initialize()
     ctx.services.scraper_runtime_state.ensure_runtime_initialized()
     ctx.database.assert_schema_current()
     return CommandResult(

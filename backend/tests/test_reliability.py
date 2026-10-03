@@ -25,8 +25,15 @@ from backend.app.services.pipeline_orchestrator import PipelineOrchestrator
 from backend.app.services.automation_runtime_service import AutomationRuntimeService
 from backend.app.services.ai_pipeline_service import AIPipelineService
 from backend.app.infrastructure.sqlite.sqlite_migration_plan import (
+    AI_NEWS_SOURCES_VERSION,
+    AI_TRANSLATIONS_VERSION,
+    WECHAT_VERSION,
+    AUTH_VERSION,
+    V2EX_VERSION,
+    JUEJIN_WEEKLY_VERSION,
     LEGACY_BASELINE_VERSION,
     INTELLIGENCE_FOUNDATION_VERSION,
+    INTELLIGENCE_WORKFLOWS_VERSION,
     MIGRATION_STEPS,
     PERFORMANCE_SCHEMA_VERSION,
     SCHEMA_VERSION,
@@ -566,7 +573,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(database_touched)
 
     async def test_ordered_migration_registry_has_one_contiguous_current_step(self):
-        self.assertEqual(len(MIGRATION_STEPS), 4)
+        self.assertEqual(len(MIGRATION_STEPS), 11)
         self.assertEqual(MIGRATION_STEPS[0].from_version, LEGACY_BASELINE_VERSION)
         self.assertEqual(MIGRATION_STEPS[0].to_version, WORKER_RUNTIME_VERSION)
         self.assertEqual(MIGRATION_STEPS[1].from_version, WORKER_RUNTIME_VERSION)
@@ -574,7 +581,21 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(MIGRATION_STEPS[2].from_version, PERFORMANCE_SCHEMA_VERSION)
         self.assertEqual(MIGRATION_STEPS[2].to_version, INTELLIGENCE_FOUNDATION_VERSION)
         self.assertEqual(MIGRATION_STEPS[3].from_version, INTELLIGENCE_FOUNDATION_VERSION)
-        self.assertEqual(MIGRATION_STEPS[3].to_version, SCHEMA_VERSION)
+        self.assertEqual(MIGRATION_STEPS[3].to_version, INTELLIGENCE_WORKFLOWS_VERSION)
+        self.assertEqual(MIGRATION_STEPS[4].from_version, INTELLIGENCE_WORKFLOWS_VERSION)
+        self.assertEqual(MIGRATION_STEPS[4].to_version, AI_NEWS_SOURCES_VERSION)
+        self.assertEqual(MIGRATION_STEPS[5].from_version, AI_NEWS_SOURCES_VERSION)
+        self.assertEqual(MIGRATION_STEPS[5].to_version, AI_TRANSLATIONS_VERSION)
+        self.assertEqual(MIGRATION_STEPS[6].from_version, AI_TRANSLATIONS_VERSION)
+        self.assertEqual(MIGRATION_STEPS[6].to_version, WECHAT_VERSION)
+        self.assertEqual(MIGRATION_STEPS[7].from_version, WECHAT_VERSION)
+        self.assertEqual(MIGRATION_STEPS[7].to_version, AUTH_VERSION)
+        self.assertEqual(MIGRATION_STEPS[8].from_version, AUTH_VERSION)
+        self.assertEqual(MIGRATION_STEPS[8].to_version, V2EX_VERSION)
+        self.assertEqual(MIGRATION_STEPS[9].from_version, V2EX_VERSION)
+        self.assertEqual(MIGRATION_STEPS[9].to_version, JUEJIN_WEEKLY_VERSION)
+        self.assertEqual(MIGRATION_STEPS[10].from_version, JUEJIN_WEEKLY_VERSION)
+        self.assertEqual(MIGRATION_STEPS[10].to_version, SCHEMA_VERSION)
 
         conn = database.connect()
         try:
@@ -613,7 +634,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
             conn.close()
         self.assertEqual(
             versions,
-            [LEGACY_BASELINE_VERSION, WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, SCHEMA_VERSION],
+            [LEGACY_BASELINE_VERSION, WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, INTELLIGENCE_WORKFLOWS_VERSION, AI_NEWS_SOURCES_VERSION, AI_TRANSLATIONS_VERSION, WECHAT_VERSION, AUTH_VERSION, V2EX_VERSION, JUEJIN_WEEKLY_VERSION, SCHEMA_VERSION],
         )
         self.assertTrue({"owner_version", "runtime_status", "status_details"} <= columns)
 
@@ -685,7 +706,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
             conn.close()
         self.assertEqual(
             versions,
-            [WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, SCHEMA_VERSION],
+            [WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, INTELLIGENCE_WORKFLOWS_VERSION, AI_NEWS_SOURCES_VERSION, AI_TRANSLATIONS_VERSION, WECHAT_VERSION, AUTH_VERSION, V2EX_VERSION, JUEJIN_WEEKLY_VERSION, SCHEMA_VERSION],
         )
         self.assertTrue(
             {
@@ -792,7 +813,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
             config = repositories().config
             config.set_config("admin_username", "admin")
             config.set_config("admin_password", "temporary-password")
-            auth = AuthService(config)
+            auth = AuthService(config, repositories().auth)
             self.assertTrue(auth.migrate_database_password())
             self.assertTrue(config.get_config("admin_password").startswith("pbkdf2_sha256$"))
             self.assertTrue(auth.authenticate_user("admin", "temporary-password"))

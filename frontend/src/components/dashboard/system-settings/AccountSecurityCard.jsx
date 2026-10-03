@@ -14,11 +14,11 @@ export default function AccountSecurityCard() {
                     <Input.Password placeholder="验证当前密码" autoComplete="current-password" />
                 </Form.Item>
                 <Input name="username" style={{ display: 'none' }} autoComplete="username" />
-                <Form.Item label="新用户名" name="new_username" tooltip="留空则不修改">
-                    <Input prefix={<UserOutlined />} placeholder="不修改请留空" autoComplete="off" />
+                <Form.Item label="新用户名" name="new_username" tooltip="留空则不修改" rules={[{ min: 3, max: 64, message: '用户名需要 3–64 个字符' }]}>
+                    <Input prefix={<UserOutlined />} placeholder="不修改请留空" autoComplete="off" maxLength={64} />
                 </Form.Item>
-                <Form.Item label="新密码" name="new_password" rules={[{ min: 6, message: '密码长度至少6位' }]} tooltip="留空则不修改">
-                    <Input.Password placeholder="不修改请留空" autoComplete="new-password" />
+                <Form.Item label="新密码" name="new_password" rules={[{ min: 12, max: 256, message: '密码需要 12–256 个字符' }]} tooltip="留空则不修改；修改成功后所有已登录设备都需要重新登录">
+                    <Input.Password placeholder="不修改请留空，设置时至少 12 位" autoComplete="new-password" maxLength={256} />
                 </Form.Item>
                 <Form.Item
                     label="确认新密码"
@@ -27,7 +27,10 @@ export default function AccountSecurityCard() {
                     rules={[
                         ({ getFieldValue }) => ({
                             validator(_, value) {
-                                if (!value || getFieldValue('new_password') === value) {
+                                if (!getFieldValue('new_password') && !value) {
+                                    return Promise.resolve();
+                                }
+                                if (getFieldValue('new_password') === value) {
                                     return Promise.resolve();
                                 }
                                 return Promise.reject(new Error('两次输入的密码不一致'));
@@ -35,7 +38,7 @@ export default function AccountSecurityCard() {
                         }),
                     ]}
                 >
-                    <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
+                    <Input.Password placeholder="再次输入新密码" autoComplete="new-password" maxLength={256} />
                 </Form.Item>
                 <Form.Item>
                     <Button type="primary" htmlType="submit" loading={loading} danger block>

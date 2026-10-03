@@ -229,8 +229,8 @@ def preview_publication_draft(draft_id: int, user: str = Depends(get_current_use
 
 
 @router.post("/editorial/drafts/{draft_id}/publish", response_model=APIEnvelope[dict])
-async def publish_publication_draft(draft_id: int, user: str = Depends(get_current_user)):
-    return APIResponse.success(data=await app_services.publication_workflow.publish_draft(draft_id))
+async def publish_publication_draft(draft_id: int, website_only: bool = False, user: str = Depends(get_current_user)):
+    return APIResponse.success(data=await app_services.publication_workflow.publish_draft(draft_id, website_only=website_only))
 
 
 @router.post("/editorial/drafts/publish-due", response_model=APIEnvelope[dict])

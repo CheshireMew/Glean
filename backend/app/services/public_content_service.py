@@ -113,7 +113,7 @@ class PublicContentService:
             if not publication or (content_kind and publication["content_type"] != content_kind):
                 return {"items": [], "total": 0, "limit": limit, "offset": offset}
             publication_id = int(publication["id"])
-        return self._daily_report_repository().list_reports(content_kind, limit, offset, query, publication_id)
+        return self._daily_report_repository().list_reports(content_kind, limit, offset, query, publication_id, public_only=True)
 
     def search_public_content(
         self, query_text: str, content_kind: str, limit: int, offset: int,

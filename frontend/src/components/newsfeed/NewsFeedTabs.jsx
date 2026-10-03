@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import PropTypes from 'prop-types';
 import { NEWSFEED_TABS } from '../../contracts/content';
 
-export default function NewsFeedTabs({ activeTab, onChange }) {
+export default function NewsFeedTabs({ activeTab, onChange, tabs = NEWSFEED_TABS }) {
     const tabRefs = useRef([]);
 
     const handleKeyDown = (event, currentIndex) => {
@@ -10,7 +10,7 @@ export default function NewsFeedTabs({ activeTab, onChange }) {
             return;
         }
         event.preventDefault();
-        const visibleIndexes = NEWSFEED_TABS.map((_, index) => index);
+        const visibleIndexes = tabs.map((_, index) => index);
         const position = Math.max(0, visibleIndexes.indexOf(currentIndex));
         let nextPosition;
         if (event.key === 'Home') nextPosition = 0;
@@ -19,13 +19,13 @@ export default function NewsFeedTabs({ activeTab, onChange }) {
         else nextPosition = (position - 1 + visibleIndexes.length) % visibleIndexes.length;
         const nextIndex = visibleIndexes[nextPosition];
         tabRefs.current[nextIndex]?.focus();
-        onChange(NEWSFEED_TABS[nextIndex].key);
+        onChange(tabs[nextIndex].key);
     };
 
     return (
         <div className="flex items-center px-6 py-4 border-b border-gray-100 sticky top-28 md:top-16 z-30 bg-white rounded-t-xl dark:bg-gray-900 dark:border-gray-800 transition-colors duration-300">
             <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="公开内容栏目">
-                {NEWSFEED_TABS.map((tab, index) => (
+                {tabs.map((tab, index) => (
                     <button
                         key={tab.key}
                         ref={(node) => { tabRefs.current[index] = node; }}
@@ -50,4 +50,5 @@ export default function NewsFeedTabs({ activeTab, onChange }) {
 NewsFeedTabs.propTypes = {
     activeTab: PropTypes.string.isRequired,
     onChange: PropTypes.func.isRequired,
+    tabs: PropTypes.arrayOf(PropTypes.shape({ key: PropTypes.string, label: PropTypes.string })),
 };

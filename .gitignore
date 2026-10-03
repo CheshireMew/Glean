@@ -31,6 +31,9 @@ yarn-error.log
 # 数据库
 *.db
 *.sqlite
+*.db.migration.lock
+*.db-wal
+*.db-shm
 
 # 日志
 *.log

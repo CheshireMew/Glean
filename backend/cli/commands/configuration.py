@@ -8,6 +8,7 @@ from backend.app.models.config import (
     DeliveryScheduleConfig,
     EditorialProfileRequest,
     RssSourceRequest,
+    RssPreviewRequest,
     SystemSettingsRequest,
     SystemTimezoneConfig,
     TelegramConfigRequest,
@@ -117,6 +118,10 @@ def profile_save_handler(ctx, args, payload):
 
 def rss_list_handler(ctx, args, payload):
     return ctx.services.rss_sources.list_sources()
+
+
+async def rss_preview_handler(ctx, args, payload):
+    return await ctx.services.rss_sources.preview(payload)
 
 
 def rss_create_handler(ctx, args, payload):
@@ -236,6 +241,10 @@ def command_specs():
             input_required=True,
         ),
         CommandSpec("rss.list", ("rss", "list"), "列出 RSS 源", rss_list_handler),
+        CommandSpec(
+            "rss.preview", ("rss", "preview"), "预览 RSS 内容，不保存或发布", rss_preview_handler,
+            input_model=RssPreviewRequest, input_required=True, database_mode="none",
+        ),
         CommandSpec(
             "rss.create",
             ("rss", "create"),

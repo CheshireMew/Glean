@@ -44,6 +44,10 @@ class SourceOperationsService:
             raise NotFoundError("来源不存在")
         return self._repository().get_source(source_key)
 
+    def is_source_enabled(self, source_key: str) -> bool:
+        source = self._repository().get_source(source_key)
+        return source is None or bool(source.get("enabled"))
+
     @staticmethod
     def _is_stale(last_run: str | None, hours: int) -> bool:
         if not last_run:

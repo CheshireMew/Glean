@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from .infrastructure.database import database
+from .infrastructure.wechat_login import WechatBrowserLogin
+from .infrastructure.wechat_gateway import WechatGateway
+from .infrastructure.scraper_impl.wechat import WechatScraper
+from .services.wechat_source_service import WechatSourceService
 from .infrastructure.repositories import repositories, transactional_repositories
 from .infrastructure.event_clustering import build_event_clusterer
 from .infrastructure.scraper_impl.rss_feed import RssFeedScraper
+from .infrastructure.scraper_impl.source_access import source_access
 from .infrastructure.scrapers import scraper_catalog
 from .core.config import settings
 from .services.ai_pipeline_service import AIPipelineService
+from .services.ai_content_service import AIContentService
+from .services.ai_refresh_service import AIRefreshService
+from .services.ai_translation_service import AITranslationService
 from .services.ai_provider_settings_service import AIProviderSettingsService
 from .services.ai_quality_service import AIQualityService
 from .services.analyst_access_service import AnalystAccessService
@@ -67,8 +75,12 @@ class AppServices:
 
     def __init__(self) -> None:
         transaction = transactional_repositories
+        self.ai_content = AIContentService(_repository("ai_content"), _repository("rss_sources"), _repository("wechat"))
 
         config_repo = _repository("config")
+        self.wechat_sources = WechatSourceService(_repository('wechat'), config_repo, transaction, WechatBrowserLogin())
+        self.wechat_gateway = WechatGateway(self.wechat_sources.load_session,
+                                           self.wechat_sources.mark_failure, self.wechat_sources.reserve_request)
         editorial_profile_repo = _repository("editorial_profiles")
         runtime_lease_repo = _repository("runtime_leases")
         scraper_state_repo = _repository("scraper_state")
@@ -134,7 +146,7 @@ class AppServices:
             settings.PUBLIC_LINKS,
         )
 
-        self.rss_sources = RssSourceService(_repository("rss_sources"), transaction)
+        self.rss_sources = RssSourceService(_repository("rss_sources"), transaction, RssFeedScraper)
         site_scrapers = tuple(
             RegisteredScraper(
                 name=definition.name,
@@ -146,13 +158,15 @@ class AppServices:
                 source_type="site",
                 transport_kind=getattr(definition.scraper_cls, "transport_kind", "browser"),
                 build_scraper=definition.scraper_cls,
-                authority_type="media",
+                homepage_url=definition.homepage_url,
+                authority_type=definition.authority_type,
                 is_official=False,
             )
             for definition in scraper_catalog.definitions()
         )
         self.scraper_registry = ScraperRegistryService(
-            self.rss_sources, site_scrapers, RssFeedScraper
+            self.rss_sources, site_scrapers, RssFeedScraper,
+            self.wechat_sources, lambda source: WechatScraper(source, self.wechat_gateway),
         )
         self.source_operations = SourceOperationsService(
             _repository("source_operations"), self.scraper_registry, transaction, config_repo
@@ -165,7 +179,11 @@ class AppServices:
             transaction,
         )
         self.scraper_runtime_state = ScraperRuntimeStateService(
-            config_repo, scraper_state_repo, self.scraper_registry
+            config_repo, scraper_state_repo, self.scraper_registry, source_access
+        )
+        self.operation_leases = OperationLeaseService(runtime_lease_repo)
+        self.ai_translation = AITranslationService(
+            _repository("ai_content"), _repository("rss_sources"), self.operation_leases
         )
         self.scraper_runs = ScraperRunService(
             _repository("news"),
@@ -173,8 +191,10 @@ class AppServices:
             scraper_state_repo,
             self.scraper_runtime_state,
             self.automation_settings,
+            ai_translation=self.ai_translation,
+            source_operations=self.source_operations,
+            ai_content_repository=_repository("ai_content"),
         )
-        self.operation_leases = OperationLeaseService(runtime_lease_repo)
         self.data_maintenance = DataMaintenanceService(
             self.automation_settings,
             config_repo,
@@ -196,6 +216,7 @@ class AppServices:
             transaction,
             settings.APP_VERSION,
         )
+        self.ai_refresh = AIRefreshService(self.scraper_commands)
 
         self.telegram_messages = TelegramMessageService(
             settings.PUBLIC_TELEGRAM_URL or settings.PUBLIC_SITE_URL
@@ -323,7 +344,8 @@ class AppServices:
 
     @staticmethod
     def auth() -> AuthService:
-        return AuthService(repositories().config)
+        repos = repositories()
+        return AuthService(repos.config, repos.auth)
 
 
 app_services = AppServices()

@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { PublicLayout } from './layouts/PublicLayout';
 import { useAuthSession } from './auth/useAuthSession';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
@@ -12,9 +12,12 @@ const TopicDetail = lazy(() => import('./pages/TopicDetail'));
 
 // 路由守卫：保护后台路由
 const ProtectedRoute = ({ children }) => {
-  const { authenticated } = useAuthSession();
+  const { authenticated, loading, error, retry } = useAuthSession();
+  const location = useLocation();
+  if (loading) return <div role="status" className="p-8 text-center">正在验证登录状态…</div>;
+  if (error) return <div role="alert" className="p-8 text-center">无法验证登录状态：{error} <button onClick={retry}>重试</button></div>;
   if (!authenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ returnTo: location.pathname + location.search }} replace />;
   }
   return children;
 };
@@ -28,6 +31,7 @@ const App = () => {
           {/* 公开路由 - 前台展示 */}
           <Route path="/" element={<PublicLayout />}>
             <Route index element={<NewsFeed />} />
+            <Route path="ai" element={<Navigate to="/?channel=ai" replace />} />
             <Route path="events/:eventId" element={<EventDetail />} />
             <Route path="entities/:slug" element={<TopicDetail type="entity" />} />
             <Route path="narratives/:slug" element={<TopicDetail type="narrative" />} />

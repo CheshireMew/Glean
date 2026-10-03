@@ -62,6 +62,13 @@ class EditorialWorkbenchService:
                 raise NotFoundError("审核内容不存在")
             if entry.get("review_status") == REVIEW_STATUS_PROCESSING:
                 raise ConflictError("内容正在由 AI 审核，完成后才能人工修改")
+            if "review_status" in normalized:
+                if normalized["review_status"] not in {"pending", "selected", "discarded"}:
+                    raise ValidationError("人工审核状态无效")
+                if normalized["review_status"] == "selected":
+                    reviewed = {**entry, **normalized}
+                    if not (reviewed.get("review_summary") or "").strip() or not (reviewed.get("review_reason") or "").strip():
+                        raise ValidationError("人工入选需要填写摘要和入选依据")
             actual_changes = {
                 key: value for key, value in normalized.items() if entry.get(key) != value
             }
@@ -70,7 +77,7 @@ class EditorialWorkbenchService:
             version = int(entry.get("editorial_version") or 0)
             if version == 0:
                 version = 1
-                repo.save_revision(entry, version, "system", [], "AI 生成原稿")
+                repo.save_revision(entry, version, "system", [], "编辑前原稿")
             next_version = version + 1
             repo.update_entry(entry_id, actual_changes, actor, next_version)
             updated = repo.get_entry(entry_id)
@@ -94,6 +101,8 @@ class EditorialWorkbenchService:
             revision = repo.get_revision(entry_id, revision_number)
             if not entry or not revision:
                 raise NotFoundError("内容或修订版本不存在")
+            if entry.get("review_status") == REVIEW_STATUS_PROCESSING:
+                raise ConflictError("内容正在由 AI 审核，完成后才能恢复")
             snapshot = revision["snapshot"]
             changes = {
                 field: snapshot.get(field)

@@ -75,6 +75,6 @@ class ApiKeyStatusRequest(BaseModel):
 
 
 class CredentialsUpdateRequest(BaseModel):
-    current_password: str
-    new_username: Optional[str] = None
-    new_password: Optional[str] = None
+    current_password: str = Field(min_length=1, max_length=256)
+    new_username: Optional[str] = Field(default=None, max_length=64)
+    new_password: Optional[str] = Field(default=None, max_length=256)

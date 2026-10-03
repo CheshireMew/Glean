@@ -11,6 +11,7 @@ function parseArray(value) {
 }
 
 const DIFF_LABELS = {
+    review_status: '审核决定',
     title: '标题', review_summary: '审核摘要', review_reason: '入选依据', review_score: '评分',
     review_category: '栏目', review_tags: '标签', enriched_summary: '综合摘要',
     enriched_impact: '为什么重要', enriched_background: '背景', enrichment_citations: '引用',
@@ -44,6 +45,7 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
             const entry = response.data;
             form.setFieldsValue({
                 title: entry.title,
+                review_status: entry.review_status,
                 review_summary: entry.review_summary,
                 review_reason: entry.review_reason,
                 review_score: entry.review_score,
@@ -119,6 +121,7 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
     const editPanel = (
         <Form form={form} layout="vertical" disabled={state.loading || state.saving}>
             <Form.Item name="title" label="发布标题" rules={[{ required: true, message: '请输入标题' }]}><Input maxLength={500} showCount /></Form.Item>
+            <Form.Item name="review_status" label="审核决定" extra="人工入选需填写摘要和入选依据；保存后可在发布中心创建草稿。"><Select options={[{value:'pending',label:'待审核'},{value:'selected',label:'入选'},{value:'discarded',label:'弃选'}]} /></Form.Item>
             <Row gutter={16}>
                 <Col xs={24} md={8}><Form.Item name="review_score" label="编辑评分"><InputNumber min={0} max={10} style={{ width: '100%' }} /></Form.Item></Col>
                 <Col xs={24} md={8}><Form.Item name="review_category" label="栏目"><Input maxLength={100} /></Form.Item></Col>
@@ -139,10 +142,10 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
     const historyPanel = state.entry ? (
         <div>
             <Space wrap style={{ marginBottom: 16 }}>
-                <Button onClick={accept}>确认当前 AI 结果可用</Button>
+                <Button onClick={accept}>确认当前内容可用</Button>
                 <span style={{ color: '#64748b' }}>当前编辑版本：{state.entry.editorial_version || 0}</span>
             </Space>
-            <Divider orientation="left">AI 原稿与当前版本</Divider>
+            <Divider orientation="left">编辑前原稿与当前版本</Divider>
             {diffRows(state.entry).length ? <Table
                 rowKey="field"
                 size="small"
@@ -150,10 +153,10 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
                 dataSource={diffRows(state.entry)}
                 columns={[
                     { title: '字段', dataIndex: 'label', width: 110 },
-                    { title: 'AI 原稿', dataIndex: 'before', render: (value) => <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }} ellipsis={{ rows: 5, expandable: true, symbol: '展开' }}>{value || '—'}</Typography.Paragraph> },
+                    { title: '编辑前原稿', dataIndex: 'before', render: (value) => <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }} ellipsis={{ rows: 5, expandable: true, symbol: '展开' }}>{value || '—'}</Typography.Paragraph> },
                     { title: '当前人工版本', dataIndex: 'after', render: (value) => <Typography.Paragraph style={{ whiteSpace: 'pre-wrap', margin: 0 }} ellipsis={{ rows: 5, expandable: true, symbol: '展开' }}>{value || '—'}</Typography.Paragraph> },
                 ]}
-            /> : <Alert type="success" showIcon message="当前内容与 AI 原稿一致" />}
+            /> : <Alert type="success" showIcon message="当前内容与编辑前原稿一致" />}
             <Divider orientation="left">完整修订链</Divider>
             <Timeline items={(state.entry.revisions || []).map((revision, index) => ({
                 color: index === 0 ? 'blue' : 'gray',

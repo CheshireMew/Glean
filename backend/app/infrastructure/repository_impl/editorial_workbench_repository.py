@@ -10,6 +10,7 @@ from .base_repository import BaseRepository
 
 class EditorialWorkbenchRepository(BaseRepository):
     EDITABLE_FIELDS = (
+        "review_status",
         "title",
         "review_summary",
         "review_reason",

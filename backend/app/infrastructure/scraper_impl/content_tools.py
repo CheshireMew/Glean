@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
+from .source_access import SourceAccessError
 
 
 async def safe_extract_text(element, selector: str = None) -> str:
@@ -223,6 +224,8 @@ async def fetch_full_content(scraper, detail_url: str, content_selectors: List[s
                     pass
 
             return full_content if full_content else ""
+    except SourceAccessError:
+        raise
     except Exception as exc:
         print(f"  获取详情页失败: {exc}")
         return ""

@@ -25,7 +25,7 @@ const RELATED_LINKS = [
     { key: 'tutorial', label: '币圈教程', icon: FaBook, iconClass: 'text-green-600' },
 ];
 
-export default function NewsFeedHeader({ searchQuery, onSearchChange, menuOpen, onToggleMenu, darkMode, onToggleDarkMode, links = {} }) {
+export default function NewsFeedHeader({ searchQuery, onSearchChange, menuOpen, onToggleMenu, darkMode, onToggleDarkMode, links = {}, searchPlaceholder = '搜索公开内容...', searchHint = '输入任意关键词后搜索文章、快讯和日报标题' }) {
     const menuButtonRef = useRef(null);
     const menuRef = useRef(null);
     const configuredLinks = RELATED_LINKS.filter((item) => links[item.key]);
@@ -75,12 +75,12 @@ export default function NewsFeedHeader({ searchQuery, onSearchChange, menuOpen, 
                         type="search"
                         aria-label="搜索公开内容"
                         aria-describedby="public-search-hint"
-                        placeholder="搜索公开内容..."
+                        placeholder={searchPlaceholder}
                         value={searchQuery}
                         onChange={(e) => onSearchChange(e.target.value)}
                         className="w-full h-10 bg-gray-50 border-none rounded-full px-10 text-sm focus:ring-1 focus:ring-blue-500 transition-all dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
                     />
-                    <span id="public-search-hint" className="sr-only">输入任意关键词后搜索文章、快讯和日报标题</span>
+                    <span id="public-search-hint" className="sr-only">{searchHint}</span>
                     <MagnifyingGlass className="absolute left-3.5 top-2.5 text-gray-400" size={18} />
                 </div>
 
@@ -145,4 +145,6 @@ NewsFeedHeader.propTypes = {
     darkMode: PropTypes.bool.isRequired,
     onToggleDarkMode: PropTypes.func.isRequired,
     links: PropTypes.objectOf(PropTypes.string),
+    searchPlaceholder: PropTypes.string,
+    searchHint: PropTypes.string,
 };

@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag } from 'antd';
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag } from 'antd';
+import { previewRssSource } from '../../api/config';
 
 const parserOptions = [
     { value: 'generic', label: '标准 RSS/Atom' },
@@ -24,6 +25,31 @@ export default function RssSourceManager({ sources, contentKind, onCreate, onUpd
     const [editing, setEditing] = useState(null);
     const [saving, setSaving] = useState(false);
     const [form] = Form.useForm();
+    const [preview, setPreview] = useState(null);
+    const [previewError, setPreviewError] = useState('');
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const previewRequest = useRef(0);
+    const clearPreview = () => {
+        previewRequest.current += 1;
+        setPreview(null);
+        setPreviewError('');
+        setPreviewLoading(false);
+    };
+    const loadPreview = async () => {
+        const requestId = ++previewRequest.current;
+        setPreview(null);
+        setPreviewError('');
+        setPreviewLoading(true);
+        try {
+            const values = await form.validateFields(['feed_url', 'parser_type']);
+            const response = await previewRssSource({ feed_url: values.feed_url, parser_type: values.parser_type, limit: 3 });
+            if (requestId === previewRequest.current) setPreview(response.data);
+        } catch (error) {
+            if (requestId === previewRequest.current && !error?.errorFields) setPreviewError(error.message || '预览失败，请重试');
+        } finally {
+            if (requestId === previewRequest.current) setPreviewLoading(false);
+        }
+    };
 
     const visibleSources = useMemo(
         () => sources.filter((source) => source.content_kind === contentKind),
@@ -31,12 +57,14 @@ export default function RssSourceManager({ sources, contentKind, onCreate, onUpd
     );
 
     const openCreate = () => {
+        clearPreview();
         setEditing(null);
         form.setFieldsValue({ ...defaultValues, content_kind: contentKind });
         setOpen(true);
     };
 
     const openEdit = (source) => {
+        clearPreview();
         setEditing(source);
         form.setFieldsValue({
             slug: source.slug,
@@ -53,6 +81,7 @@ export default function RssSourceManager({ sources, contentKind, onCreate, onUpd
     };
 
     const closeModal = () => {
+        clearPreview();
         setOpen(false);
         setEditing(null);
         form.resetFields();
@@ -132,9 +161,10 @@ export default function RssSourceManager({ sources, contentKind, onCreate, onUpd
                 onOk={submit}
                 onCancel={closeModal}
                 confirmLoading={saving}
+                width={760}
                 destroyOnHidden
             >
-                <Form form={form} layout="vertical" initialValues={{ ...defaultValues, content_kind: contentKind }}>
+                <Form form={form} layout="vertical" initialValues={{ ...defaultValues, content_kind: contentKind }} onValuesChange={(changed) => { if ('feed_url' in changed || 'parser_type' in changed) clearPreview(); }}>
                     <Form.Item name="display_name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
                         <Input />
                     </Form.Item>
@@ -158,6 +188,22 @@ export default function RssSourceManager({ sources, contentKind, onCreate, onUpd
                     <Form.Item name="parser_type" label="解析方式" rules={[{ required: true, message: '请选择解析方式' }]}>
                         <Select options={parserOptions} />
                     </Form.Item>
+                    <div style={{ marginBottom: 24 }}>
+                        <Button onClick={() => void loadPreview()} loading={previewLoading}>预览内容</Button>
+                        <p style={{ color: '#666' }}>先查看最近 3 条订阅内容。预览不会保存来源或触发审核、发布。</p>
+                        {previewError && <Alert type="error" showIcon title={previewError} />}
+                        {preview && <div aria-live="polite">
+                            <Alert type="info" showIcon title={preview.notice} />
+                            {preview.items.map((item, index) => <article key={`${item.url}-${index}`} style={{ marginTop: 16 }}>
+                                <h4><a href={item.url} target="_blank" rel="noreferrer">{item.title}</a></h4>
+                                <p>{item.author} · {item.published_at} · <Tag>订阅源内容 · 全文状态未知</Tag></p>
+                                <details>
+                                    <summary>查看内容（{item.content.length} 字符）</summary>
+                                    <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 360, overflowY: 'auto', padding: '12px 0' }}>{item.content || '订阅源未提供正文，请打开原文查看。'}</div>
+                                </details>
+                            </article>)}
+                        </div>}
+                    </div>
                     <Form.Item name="default_limit" label="默认条数" rules={[{ required: true, message: '请输入默认条数' }]}>
                         <InputNumber min={1} max={100} style={{ width: '100%' }} />
                     </Form.Item>

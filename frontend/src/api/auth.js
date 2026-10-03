@@ -1,5 +1,5 @@
 import { requestOperation } from './operations';
-import { setAuthToken } from '../auth/session';
+import { clearAuthToken, setAuthToken } from '../auth/session';
 
 export const login = async (username, password) => {
     const formData = new URLSearchParams();
@@ -14,3 +14,14 @@ export const login = async (username, password) => {
 };
 
 export const updateCredentials = (data) => requestOperation('updateCredentials', { data });
+
+export const getAuthSession = () => requestOperation('authSession');
+
+export const logout = async () => {
+    try {
+        await requestOperation('logout');
+    } catch (error) {
+        if (error.response?.status !== 401) throw error;
+    }
+    clearAuthToken();
+};

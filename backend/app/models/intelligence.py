@@ -9,6 +9,7 @@ from shared.content_contract import ContentKind
 
 
 class EditorialEditRequest(BaseModel):
+    review_status: Literal["pending", "selected", "discarded"] | None = None
     title: str | None = Field(default=None, min_length=1, max_length=500)
     review_summary: str | None = Field(default=None, max_length=10000)
     review_reason: str | None = Field(default=None, max_length=10000)

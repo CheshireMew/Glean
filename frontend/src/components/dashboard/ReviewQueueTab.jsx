@@ -1,16 +1,18 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { Button, Space, Tag } from 'antd';
 
 import { useReviewQueueTab } from '../../hooks/dashboard/useReviewQueueTab';
 import ContentDataTable from './ContentDataTable';
 import ReviewRunnerPanel from './ReviewRunnerPanel';
+import EditorialEntryModal from './EditorialEntryModal';
 import { EXPORT_SCOPE } from '../../contracts/content';
 import { formatLocalDateTime } from '../../utils/time';
 
 const ReviewQueueTab = ({ spiders, onAddToFeatured, onShowExport, active, contentKind }) => {
     const listState = useReviewQueueTab(contentKind, active);
+    const [editingId, setEditingId] = useState(null);
 
     const columns = [
         { title: 'ID', dataIndex: 'id', width: 60 },
@@ -33,6 +35,7 @@ const ReviewQueueTab = ({ spiders, onAddToFeatured, onShowExport, active, conten
             width: 120,
             render: (_, record) => (
                 <Space>
+                    <Button size="small" onClick={() => setEditingId(record.id)}>人工审核</Button>
                     <Button type="primary" size="small" onClick={() => onAddToFeatured && onAddToFeatured(record)}>
                         加入输出
                     </Button>
@@ -44,6 +47,7 @@ const ReviewQueueTab = ({ spiders, onAddToFeatured, onShowExport, active, conten
     return (
         <div style={{ padding: '0 10px' }}>
             <ReviewRunnerPanel contentKind={contentKind} />
+            <EditorialEntryModal entryId={editingId} open={editingId !== null} onClose={() => setEditingId(null)} onSaved={() => listState.fetchItems()} />
             <ContentDataTable
                 listState={listState}
                 columns={columns}

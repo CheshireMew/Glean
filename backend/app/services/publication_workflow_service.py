@@ -106,7 +106,7 @@ class PublicationWorkflowService:
             "target_count": len(plan["targets"]),
         }
 
-    async def publish_draft(self, draft_id: int) -> Dict:
+    async def publish_draft(self, draft_id: int, *, website_only: bool = False) -> Dict:
         draft = self._editorial_repository().get_draft(draft_id)
         if not draft:
             raise NotFoundError("发布草稿不存在")
@@ -114,11 +114,20 @@ class PublicationWorkflowService:
             raise ConflictError("已取消的草稿不能发布")
         if draft["status"] == "published":
             return {"draft_id": draft_id, "status": "published", "report_id": draft.get("published_report_id"), "operations": []}
-        plan = self._plan(draft)
+        if website_only and draft["status"] == "publishing":
+            raise ConflictError("草稿已有外部投递正在进行，请先完成原发布")
+        plan = self._plan(draft, require_targets=not website_only)
+        if website_only:
+            if not plan["publication"].get("is_public"):
+                raise ValidationError("仅发布到网站需要选择公开频道")
+            if any((self._editorial_repository().get_entry(entry["id"]) or {}).get("review_status") != "selected" for entry in plan["entries"]):
+                raise ValidationError("请先审核并入选草稿内的全部内容")
+            plan["targets"] = []
         unavailable = [target["channel_name"] for target in plan["targets"] if not self._channel_gateway.channel_is_configured(target["channel_slug"])]
         if unavailable:
             raise ValidationError(f"以下投递渠道尚未配置完整：{', '.join(unavailable)}")
-        self._editorial_repository().update_draft(draft_id, status="publishing")
+        if not website_only:
+            self._editorial_repository().update_draft(draft_id, status="publishing")
         results = []
         for target in plan["targets"]:
             operation_key = f"publish:{draft['draft_key']}:{target['channel_slug']}"
@@ -153,7 +162,8 @@ class PublicationWorkflowService:
                 draft_id=draft_id,
             )
             repos.daily_reports.save_report_items(report_id, plan["entries"])
-            repos.review.mark_delivered([entry["id"] for entry in plan["entries"]])
+            if not website_only:
+                repos.review.mark_delivered([entry["id"] for entry in plan["entries"]])
             repos.editorial_workbench.update_draft(draft_id, status="published", published_report_id=report_id)
         return {"draft_id": draft_id, "status": "published", "report_id": report_id, "operations": results}
 

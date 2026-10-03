@@ -22,9 +22,33 @@ def rss_slug_from_runtime_name(name: str) -> str | None:
 
 
 class RssSourceService:
-    def __init__(self, rss_source_repository, transaction):
+    def __init__(self, rss_source_repository, transaction, scraper_factory=None):
         self._rss_source_repository = rss_source_repository
         self._transaction = transaction
+        self._scraper_factory = scraper_factory
+
+    async def preview(self, payload: Dict) -> Dict:
+        feed_url = self._normalize_url(payload.get("feed_url") or "")
+        parser_type = payload.get("parser_type", "generic")
+        limit = int(payload.get("limit", 3))
+        if parser_type not in {"generic", "summary_source_link"} or not 1 <= limit <= 5:
+            raise ValidationError("预览解析方式无效或条数不在 1 到 5 之间")
+        if self._scraper_factory is None:
+            raise BusinessError("RSS 预览未配置")
+        scraper = self._scraper_factory({
+            "display_name": urlparse(feed_url).netloc, "site_url": feed_url,
+            "feed_url": feed_url, "content_kind": "article",
+            "parser_type": parser_type, "default_limit": limit,
+        })
+        try:
+            items = await scraper.preview(limit)
+        except Exception as exc:
+            raise BusinessError(f"RSS 预览失败：{exc}") from exc
+        return {
+            "feed_url": feed_url,
+            "items": [{**item, "content_origin": "feed", "completeness": "unknown"} for item in items],
+            "notice": "以下为订阅源提供的内容，无法据此确认是否全文。预览不会保存来源或进入审核、发布。",
+        }
 
     def list_sources(self) -> Dict:
         return {"sources": self._rss_source_repository().list_sources()}

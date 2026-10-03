@@ -24,6 +24,33 @@ vi.mock('antd', () => {
 })
 
 describe('ScraperCard', () => {
+  it('shows the cooldown and prevents manual requests during it', () => {
+    const onRun = vi.fn()
+    render(<ScraperCard name="odaily" displayName="Odaily" contentKind="news"
+      status={{ status: 'error', interval: 60, limit: 5, cooldown_until: Date.now() / 1000 + 1800, cooldown_reason: '网站要求稍后再试', logs: [] }}
+      onRun={onRun} onCancel={vi.fn()} onConfigChange={vi.fn()} />)
+    expect(screen.getByText('冷却中')).toBeInTheDocument()
+    expect(screen.getByText('网站要求稍后再试')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '运行' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '运行' }))
+    expect(onRun).not.toHaveBeenCalled()
+  })
+
+  it('keeps manual mode after the server returns a null interval', async () => {
+    const props = {
+      name: 'odaily', displayName: 'Odaily', contentKind: 'news',
+      status: { status: 'idle', limit: 5, interval: 60, logs: [] },
+      onRun: vi.fn(), onCancel: vi.fn(), onConfigChange: vi.fn().mockResolvedValue(true),
+    }
+    const { rerender } = render(<ScraperCard {...props} />)
+    const intervalSelect = screen.getAllByRole('combobox')[1]
+    fireEvent.change(intervalSelect, { target: { value: 'manual' } })
+    await waitFor(() => expect(props.onConfigChange).toHaveBeenCalledWith('odaily', { interval: 'manual' }))
+    rerender(<ScraperCard {...props} status={{ ...props.status, interval: null }} />)
+    await waitFor(() => expect(intervalSelect).toHaveValue('manual'))
+    expect(screen.getByText('仅手动')).toBeInTheDocument()
+  })
+
   it('restores the authoritative value when a configuration save fails', async () => {
     const onConfigChange = vi.fn().mockResolvedValue(false)
     render(

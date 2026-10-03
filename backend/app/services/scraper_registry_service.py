@@ -5,6 +5,7 @@ from typing import Callable
 
 from ..core.exceptions import NotFoundError
 from .rss_source_service import rss_runtime_name
+from ..domain.wechat import wechat_runtime_name, wechat_source_name
 
 
 @dataclass(frozen=True)
@@ -24,10 +25,12 @@ class RegisteredScraper:
 
 
 class ScraperRegistryService:
-    def __init__(self, rss_sources, site_definitions, rss_scraper_factory):
+    def __init__(self, rss_sources, site_definitions, rss_scraper_factory, wechat_sources=None, wechat_scraper_factory=None):
         self._rss_sources = rss_sources
         self._site_definitions = tuple(site_definitions)
         self._rss_scraper_factory = rss_scraper_factory
+        self._wechat_sources = wechat_sources
+        self._wechat_scraper_factory = wechat_scraper_factory
 
     def list_definitions(self) -> list[RegisteredScraper]:
         definitions = list(self._site_definitions)
@@ -50,6 +53,15 @@ class ScraperRegistryService:
                 )
             )
 
+        if self._wechat_sources is not None:
+            for source in self._wechat_sources.list_sources(enabled_only=True):
+                definitions.append(RegisteredScraper(
+                    name=wechat_runtime_name(source['id']), display_name=wechat_source_name(source['name']),
+                    source_site=wechat_source_name(source['name']), content_kind='article',
+                    default_limit=source['default_limit'], default_interval=source['default_interval'],
+                    source_type='api', transport_kind='api', homepage_url='https://mp.weixin.qq.com/',
+                    build_scraper=lambda source=source: self._wechat_scraper_factory(source),
+                ))
         return definitions
 
     def names(self) -> list[str]:

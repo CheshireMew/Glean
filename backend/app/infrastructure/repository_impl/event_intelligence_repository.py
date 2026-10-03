@@ -5,6 +5,7 @@ from typing import Dict, Optional
 from shared.content_contract import EVENT_SOURCE_TABLE, EVENT_TABLE, REVIEW_TABLE
 
 from .base_repository import BaseRepository
+from .public_visibility import published_entry_sql
 
 
 class EventIntelligenceRepository(BaseRepository):
@@ -114,7 +115,7 @@ class EventIntelligenceRepository(BaseRepository):
         relation_visibility = "AND er.is_public = 1" if public_only else ""
         related_public = (
             f"AND EXISTS (SELECT 1 FROM {REVIEW_TABLE} rr WHERE rr.event_id = related.id "
-            "AND rr.review_status = 'selected' AND rr.delivery_status = 'sent')"
+            f"AND rr.review_status = 'selected' AND {published_entry_sql('rr')})"
             if public_only
             else ""
         )
@@ -163,7 +164,7 @@ class EventIntelligenceRepository(BaseRepository):
         ]
         review_where = "event_id = ?"
         if public_only:
-            review_where += " AND review_status = 'selected' AND delivery_status = 'sent'"
+            review_where += f" AND review_status = 'selected' AND {published_entry_sql(REVIEW_TABLE)}"
         reviews = [
             dict(row)
             for row in self.execute(

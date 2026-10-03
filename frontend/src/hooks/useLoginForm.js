@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import { login } from '../api/auth';
 
-export function useLoginForm(navigate) {
+export function useLoginForm(navigate, returnTo) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -11,7 +11,7 @@ export function useLoginForm(navigate) {
         setError('');
         try {
             await login(values.username, values.password);
-            navigate('/admin');
+            navigate(returnTo === '/admin?tab=wechat' ? returnTo : '/admin');
         } catch (error) {
             setError(`登录失败：${error?.message || '请检查管理员账号配置'}`);
         } finally {

@@ -40,6 +40,7 @@ class EditorialAIService:
 1. score 为 1-10 的整数
 2. passed 为 true 表示应保留，为 false 表示应丢弃
 3. 不要输出任何 JSON 之外的内容
+4. 依据提供的内容判断；材料可能只是节选，不要假定已经取得原文全文。
 """
         user_prompt = f"""审核偏好：
 {review_prompt}
@@ -47,8 +48,8 @@ class EditorialAIService:
 标题：
 {title}
 
-正文摘要：
-{content[:1200]}
+提供的正文：
+{content}
 """
         parsed = await self.client.complete_json(
             system=system_prompt,

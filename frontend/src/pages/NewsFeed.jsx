@@ -1,16 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowUp } from '@phosphor-icons/react';
+import { useSearchParams } from 'react-router-dom';
 
 import { useNewsFeedData } from '../hooks/useNewsFeedData';
 import NewsFeedHeader from '../components/newsfeed/NewsFeedHeader';
 import NewsFeedTabs from '../components/newsfeed/NewsFeedTabs';
 import ArticleList from '../components/newsfeed/ArticleList';
+import AIChannel from '../components/newsfeed/AIChannel';
 import NewsTimeline from '../components/newsfeed/NewsTimeline';
 import DailyReportModal, { DailyReportItem } from '../components/newsfeed/DailyReportModal';
-import { FEED_TAB } from '../contracts/content';
+import { FEED_TAB, NEWSFEED_TABS } from '../contracts/content';
+
+// Temporarily hide briefs and reports from the public UI; retain their data and components.
+const SHOW_SECONDARY_FEEDS = false;
 
 export default function NewsFeed() {
-    const { state, actions } = useNewsFeedData();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const aiView = searchParams.get('channel') === 'ai';
+    const { state, actions } = useNewsFeedData({ active: !aiView, articlesOnly: !SHOW_SECONDARY_FEEDS });
     const {
         activeTab,
         loading,
@@ -46,6 +53,13 @@ export default function NewsFeed() {
         setSelectedPublicationSlug,
     } = actions;
     const [showBackToTop, setShowBackToTop] = useState(false);
+    const selectChannel = (slug) => {
+        const next = new URLSearchParams(searchParams);
+        if (slug === 'ai') next.set('channel', 'ai'); else next.delete('channel');
+        setSearchParams(next);
+        if (slug !== 'ai') setSelectedPublicationSlug(slug);
+        setSearchQuery('');
+    };
 
     useEffect(() => {
         const updateBackToTop = () => setShowBackToTop(window.scrollY > 480);
@@ -64,18 +78,22 @@ export default function NewsFeed() {
                 darkMode={darkMode}
                 onToggleDarkMode={() => setDarkMode(!darkMode)}
                 links={publicLinks}
+                searchPlaceholder={aiView ? '搜索 AI 资讯...' : '搜索文章...'}
+                searchHint={aiView ? '搜索 AI 信息源提供的标题和内容' : '搜索已发布文章'}
             />
 
-            {publications.length > 0 && <nav aria-label="内容频道" className="max-w-7xl mx-auto px-4 pt-5 w-full">
+            <nav aria-label="内容频道" className="max-w-7xl mx-auto px-4 pt-5 w-full">
                 <div className="flex items-center gap-2 overflow-x-auto rounded-xl border border-gray-100 bg-white p-2 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                    <button type="button" onClick={() => setSelectedPublicationSlug('')} className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${!selectedPublicationSlug ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>全部默认频道</button>
-                    {publications.map((publication) => <button key={publication.public_slug} type="button" onClick={() => setSelectedPublicationSlug(publication.public_slug)} className={`shrink-0 rounded-lg px-4 py-2 text-left text-sm transition-colors ${selectedPublicationSlug === publication.public_slug ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}><span className="font-medium">{publication.display_name}</span><span className={`ml-2 text-xs ${selectedPublicationSlug === publication.public_slug ? 'text-blue-100' : 'text-gray-400'}`}>{publication.content_type === 'news' ? '快讯' : '文章'}</span></button>)}
+                    <button type="button" onClick={() => selectChannel('')} aria-pressed={!aiView && !selectedPublicationSlug} className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${!aiView && !selectedPublicationSlug ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>全部默认频道</button>
+                    {publications.filter((publication) => SHOW_SECONDARY_FEEDS || publication.content_type === 'article').map((publication) => <button key={publication.public_slug} type="button" onClick={() => selectChannel(publication.public_slug)} aria-pressed={!aiView && selectedPublicationSlug === publication.public_slug} className={`shrink-0 rounded-lg px-4 py-2 text-left text-sm transition-colors ${!aiView && selectedPublicationSlug === publication.public_slug ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}><span className="font-medium">{publication.display_name}</span><span className={`ml-2 text-xs ${!aiView && selectedPublicationSlug === publication.public_slug ? 'text-blue-100' : 'text-gray-400'}`}>{publication.content_type === 'news' ? '快讯' : '文章'}</span></button>)}
+                    <button type="button" onClick={() => selectChannel('ai')} aria-pressed={aiView} className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${aiView ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>AI 资讯</button>
                 </div>
-            </nav>}
+            </nav>
 
             <main className="max-w-7xl mx-auto px-4 py-6 w-full flex flex-col md:flex-row gap-6 items-stretch">
-                <div className="w-full md:w-2/3 bg-white rounded-xl shadow-sm border border-gray-100 min-h-[80vh] flex flex-col dark:bg-gray-900 dark:border-gray-800 transition-colors duration-300">
-                    <NewsFeedTabs activeTab={activeTab} onChange={setActiveTab} />
+                {aiView ? <AIChannel query={state.debouncedSearchQuery} /> : <>
+                <div className={`w-full ${SHOW_SECONDARY_FEEDS ? 'md:w-2/3' : ''} bg-white rounded-xl shadow-sm border border-gray-100 min-h-[80vh] flex flex-col dark:bg-gray-900 dark:border-gray-800 transition-colors duration-300`}>
+                    <NewsFeedTabs activeTab={activeTab} onChange={setActiveTab} tabs={NEWSFEED_TABS.filter((tab) => SHOW_SECONDARY_FEEDS || tab.key === FEED_TAB.LONGFORM)} />
 
                     {refreshError && (
                         <div role="status" className="m-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
@@ -134,7 +152,7 @@ export default function NewsFeed() {
                     )}
                 </div>
 
-                <aside className="hidden md:flex w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-gray-100 flex-col dark:bg-gray-900 dark:border-gray-800 transition-colors duration-300">
+                {SHOW_SECONDARY_FEEDS && <aside className="hidden md:flex w-full md:w-1/3 bg-white rounded-xl shadow-sm border border-gray-100 flex-col dark:bg-gray-900 dark:border-gray-800 transition-colors duration-300">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 sticky top-16 z-30 bg-white rounded-t-xl dark:bg-gray-900 dark:border-gray-800 transition-colors duration-300">
                         <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
@@ -154,10 +172,11 @@ export default function NewsFeed() {
                             </button>
                         ) : `已显示全部 ${visibleBriefItems.length} 条快讯`}
                     </div>
-                </aside>
+                </aside>}
+                </>}
             </main>
 
-            <DailyReportModal report={selectedReport} onClose={() => setSelectedReport(null)} />
+            {SHOW_SECONDARY_FEEDS && <DailyReportModal report={selectedReport} onClose={() => setSelectedReport(null)} />}
 
             {showBackToTop && <div className="fixed bottom-5 right-5 md:bottom-8 md:right-8 flex flex-col items-end gap-3 z-50">
                 <button

@@ -93,6 +93,12 @@ class AIReviewConfigRequest(BaseModel):
     hours: int | None = Field(default=8, ge=1, le=720)
 
 
+class RssPreviewRequest(BaseModel):
+    feed_url: str
+    parser_type: Literal["generic", "summary_source_link"] = "generic"
+    limit: int = Field(default=3, ge=1, le=5)
+
+
 class RssSourceRequest(BaseModel):
     slug: str | None = None
     display_name: str

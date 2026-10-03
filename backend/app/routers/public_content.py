@@ -9,6 +9,7 @@ from ..composition import app_services
 from ..core.exceptions import ValidationError
 from ..core.response import APIEnvelope, APIResponse, ErrorEnvelope
 from ..models.responses import ContentItem, EntityData, EventDetailData, NarrativeData, PublicContentData, PublicReportsData, PublicSiteConfigData
+from ..models.responses import AIContentData, AIRefreshData
 
 
 router = APIRouter(responses={400: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope}, 422: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
@@ -17,6 +18,21 @@ router = APIRouter(responses={400: {"model": ErrorEnvelope}, 404: {"model": Erro
 @router.get("/public/config", response_model=APIEnvelope[PublicSiteConfigData])
 def get_public_config():
     return APIResponse.success(data=app_services.public_content.get_public_config())
+
+
+@router.get("/public/ai/content", response_model=APIEnvelope[AIContentData])
+def get_public_ai_content(
+    source: str | None = Query(default=None, max_length=100),
+    query: str = Query(default="", max_length=200),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    return APIResponse.success(data=app_services.ai_content.get_content(source, query, limit, offset))
+
+
+@router.post("/public/ai/refresh", response_model=APIEnvelope[AIRefreshData])
+async def refresh_public_ai_content():
+    return APIResponse.success(data=await app_services.ai_refresh.refresh())
 
 
 @router.get("/public/content", response_model=APIEnvelope[PublicContentData])
