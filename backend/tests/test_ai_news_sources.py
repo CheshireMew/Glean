@@ -234,7 +234,7 @@ class AiSourceMigrationTest(unittest.TestCase):
                 self.assertEqual(reopened.execute("SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1").fetchone()[0], SCHEMA_VERSION)
             reopened.close()
             database.assert_schema_current()
-            self.assertEqual(len(list((Path(folder) / "archive" / "database-backups").glob("*.db"))), 1)
+            self.assertEqual(len(list((Path(folder) / "backups").glob("*.db"))), 1)
 
 
 if __name__ == "__main__":

@@ -38,29 +38,23 @@
 
 ```text
 Glean/
-├── backend/
-│   ├── main.py
-│   ├── worker.py
-│   ├── tests/
-│   └── app/
-│       ├── core/
-│       ├── infrastructure/
-│       ├── routers/
-│       └── services/
-├── frontend/
-│   └── src/
-│       ├── api/
-│       ├── components/
-│       ├── hooks/
-│       ├── layouts/
-│       └── pages/
-├── shared/
-│   └── content_contract.py
-├── archive/              # 不参与运行的历史实现
-├── requirements.txt      # 可升级的直接依赖范围
-├── requirements.lock     # 已验证的 Windows 运行依赖快照
-└── requirements-dev.lock # 运行依赖加开发检查工具
+├── backend/          # API、worker、CLI、后端业务与测试
+├── frontend/         # React 页面、组件、前端测试和构建配置
+├── shared/           # 前后端共用的内容契约与数据库基础接口
+├── docs/             # 现行文档，按架构、操作、接口和来源分类
+├── scripts/windows/  # Windows 服务启动脚本
+├── data/             # 本机数据库、迁移锁和数据库备份
+├── archive/          # 历史代码、旧资料、RSS 筛选记录和本机验证产物
+├── .github/          # Windows CI
+├── start.bat         # 双击启动入口
+├── start.ps1         # PowerShell 启动入口
+├── glean.ps1         # CLI 主入口
+├── requirements.txt
+├── requirements.lock
+└── requirements-dev.lock
 ```
+
+从 [文档索引](docs/README.md) 查找使用与开发说明；[目录职责](docs/project-structure.md) 说明每类文件应该放在哪里。旧资料的位置和恢复方法记录在本机 `archive/README.md`，整个 `archive/` 由 Git 忽略，不随仓库克隆。最终保留的 5 个 RSS 来源见 [当前阅读来源](docs/sources/curated-rss.md)。
 
 ## 快速开始
 
@@ -133,9 +127,9 @@ Windows 下双击根目录的 [`start.bat`](start.bat)，会依次启动后端�
 
 ```powershell
 # 分别打开三个 PowerShell 窗口
-.\run_backend.ps1
-.\run_worker.ps1
-.\run_frontend.ps1
+.\scripts\windows\run_backend.ps1
+.\scripts\windows\run_worker.ps1
+.\scripts\windows\run_frontend.ps1
 ```
 
 访问地址：
@@ -171,13 +165,13 @@ API 与 worker 不能合并成一个进程。worker 使用数据库租约阻止�
 '{"timezone":"UTC"}' | .\glean.ps1 config timezone set --input -
 ```
 
-默认 stdout 是单个 JSON 文档，业务日志只写入 stderr；调用方应同时检查 `success` 和进程退出码。删除、数据库维护、完整流水线和 Telegram 发送等高影响操作必须显式传入 `--yes`。完整命令、输入 Schema、退出码和 Agent 调用规则见 [`CLI_DOCUMENTATION.md`](CLI_DOCUMENTATION.md)，也可运行 `.\glean.ps1 capabilities <command-id>` 获取机器可读描述。
+默认 stdout 是单个 JSON 文档，业务日志只写入 stderr；调用方应同时检查 `success` 和进程退出码。删除、数据库维护、完整流水线和 Telegram 发送等高影响操作必须显式传入 `--yes`。完整命令、输入 Schema、退出码和 Agent 调用规则见 [`CLI_DOCUMENTATION.md`](docs/reference/cli.md)，也可运行 `.\glean.ps1 capabilities <command-id>` 获取机器可读描述。
 
 ## 改名兼容
 
-项目现名为 Glean，新命令入口为 `glean.ps1`，原 `ainews.ps1` 继续转发到同一入口。环境选择优先读取 `GLEAN_ENV`，仍支持 `AINEWS_ENV` 和 `ENV`。
+项目现名为 Glean，命令入口为 `glean.ps1`。旧 `ainews.ps1` 已移入本机 `archive/scripts/`，后续命令统一使用 `glean.ps1`。环境选择优先读取 `GLEAN_ENV`，仍支持 `AINEWS_ENV` 和 `ENV`。
 
-数据库文件仍使用 `ainews.db`；浏览器草稿和发送恢复记录沿用原存储键；Webhook 事件类型保留 `ainews.publication` 和 `ainews.analyst.changes`。这些是已有数据与接入协议的兼容标识，改名不要求搬迁数据库或重配订阅。已有部署目录和服务名可继续使用，部署文档中的 Glean 路径用于新部署。
+数据库文件名仍为 `ainews.db`，当前整理后的路径是 `data/ainews.db`，迁移前快照放在 `data/backups/`。其他旧部署若仍有根目录数据库，会继续读取该文件；需要整理时先停止服务再搬移，详见 [数据目录说明](data/README.md)。浏览器草稿、发送恢复记录及 Webhook 事件类型 `ainews.publication`、`ainews.analyst.changes` 沿用已有标识，订阅无需重配。已有部署目录和服务名可继续使用。
 
 ## 后台数据流
 
@@ -280,15 +274,15 @@ API 与 worker 不能合并成一个进程。worker 使用数据库租约阻止�
 
 - 如需了解当前数据库表结构，请以 [`sqlite_schema.py`](backend/app/infrastructure/sqlite/sqlite_schema.py) 为准。
 - 如需了解迁移顺序，请以 [`sqlite_migration_plan.py`](backend/app/infrastructure/sqlite/sqlite_migration_plan.py) 为准；[`sqlite_migrations.py`](backend/app/infrastructure/sqlite/sqlite_migrations.py) 仅保留历史兼容转换。
-- 旧数据库首次升级会在同级 `archive/database-backups` 中生成迁移前快照，每个已执行步骤按顺序记录在 `schema_migrations`，未登记的中间版本会被拒绝。
+- 旧数据库首次升级会在同级 `backups/`（默认 `data/backups/`） 中生成迁移前快照，每个已执行步骤按顺序记录在 `schema_migrations`，未登记的中间版本会被拒绝。
 - JSON 接口的成功响应使用具体 `APIEnvelope[T]` DTO；前端实际消费的 method/path 由 [`operations.json`](frontend/src/api/operations.json) 登记，后端测试会与 OpenAPI 逐项核对。
-- 发布渠道配置、模板字段、提醒条件、行情窗口和日常操作说明见 [`INTELLIGENCE_WORKFLOWS.md`](INTELLIGENCE_WORKFLOWS.md)。
+- 发布渠道配置、模板字段、提醒条件、行情窗口和日常操作说明见 [`INTELLIGENCE_WORKFLOWS.md`](docs/guides/intelligence-workflows.md)。
 
 ## 验证
 
 ```powershell
 python -m compileall -q backend
-python -m ruff check backend shared --select F --exclude backend/archive
+python -m ruff check backend shared --select F
 python -m pytest backend/tests -q
 Set-Location frontend
 npm run lint
@@ -304,8 +298,8 @@ npm run build:release
 npm run verify:release
 ```
 
-`build:release` 会重新生成 `frontend/dist`，嵌入 `VERSION` 并写出逐文件 SHA-256 清单；`verify:release` 会拒绝版本不一致、文件缺失、哈希变化和未列入清单的额外文件，并用无头 Chromium 实际打开公开页、登录页和后台页，任何浏览器运行时异常都会使发布失败。Nginx 必须按 `DEPLOYMENT.md` 开启文本资源 gzip 压缩。CI 使用 Windows、Python 3.10 和 Node.js 22 执行完整测试和这组真实构建检查。
+`build:release` 会重新生成 `frontend/dist`，嵌入 `VERSION` 并写出逐文件 SHA-256 清单；`verify:release` 会拒绝版本不一致、文件缺失、哈希变化和未列入清单的额外文件，并用无头 Chromium 实际打开公开页、登录页和后台页，任何浏览器运行时异常都会使发布失败。Nginx 必须按 [部署说明](docs/operations/deployment.md) 开启文本资源 gzip 压缩。CI 使用 Windows、Python 3.10 和 Node.js 22 执行完整测试和这组真实构建检查。
 
 ## 许可
 
-项目原创代码采用 `AGPL-3.0-or-later`。采集内容、模型输出和第三方依赖仍受各自来源条款约束，详见 [LICENSING.md](LICENSING.md) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+项目原创代码采用 `AGPL-3.0-or-later`。采集内容、模型输出和第三方依赖仍受各自来源条款约束，详见 [LICENSING.md](docs/legal/licensing.md) 与 [THIRD_PARTY_NOTICES.md](docs/legal/third-party-notices.md)。

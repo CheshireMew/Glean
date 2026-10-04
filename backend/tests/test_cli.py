@@ -172,7 +172,7 @@ class CLITest(unittest.TestCase):
         code, initialized, _ = self._run("system", "init")
         self.assertEqual(code, 0, initialized)
         self.assertFalse(initialized["data"]["created"])
-        backups = list((self.db_path.parent / "archive" / "database-backups").glob("*.db"))
+        backups = list((self.db_path.parent / "backups").glob("*.db"))
         self.assertEqual(len(backups), 1)
         code, overview, _ = self._run("content", "overview")
         self.assertEqual(code, 0, overview)

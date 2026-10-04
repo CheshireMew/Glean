@@ -6,8 +6,11 @@
 
 ### Changed
 
+- 现行文档集中到 `docs/`，Windows 服务脚本集中到 `scripts/windows/`，旧资料和本机验证产物统一归档
+- 默认数据库路径调整为 `data/ainews.db`，迁移前备份使用数据库同级的 `backups/`；仍兼容只存在根目录数据库的旧部署
+- 旧 `ainews.ps1` 移入本机归档，命令行统一使用 `glean.ps1`；整个 `archive/` 由 Git 忽略
 - 项目更名为 Glean，更新公开页面、后台、API、RSS、通知、导出文件名和文档
-- 新增 `glean.ps1` 主入口和 `GLEAN_ENV`，保留旧 CLI、环境变量、数据库及 Webhook 和浏览器存储标识兼容
+- 新增 `glean.ps1` 主入口和 `GLEAN_ENV`，保留旧环境变量、数据库及 Webhook 和浏览器存储标识兼容
 
 ### Added
 

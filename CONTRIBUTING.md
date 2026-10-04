@@ -88,7 +88,7 @@ Set-Location ..
    ```powershell
    # 后端回归
    python -m compileall -q backend
-   python -m ruff check backend shared --select F --exclude backend/archive
+   python -m ruff check backend shared --select F
    python -m unittest discover -s backend/tests -v
 
    # 前端静态检查、测试与不落盘构建
@@ -240,8 +240,8 @@ export default NewsCard;
 
 1. **查看文档**:
    - [README.md](README.md) - 项目概览
-   - [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md) - 详细文档
-   - [VIBE_CODING_GUIDE.md](VIBE_CODING_GUIDE.md) - 编码指南
+   - [技术架构](docs/architecture/overview.md) - 模块与流程说明
+   - [文档索引](docs/README.md) - 现行使用、架构和开发文档
 
 2. **搜索Issues**: 可能已有人遇到过同样的问题
 

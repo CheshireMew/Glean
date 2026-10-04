@@ -1,0 +1,339 @@
+# Glean Agent CLI
+
+命令入口为 `glean.ps1`，旧 `ainews.ps1` 已移入本机 `archive/scripts/`，不再作为可用入口。环境优先级为 `GLEAN_ENV`、`AINEWS_ENV`、`ENV`；显式 `--env` 优先于环境变量。
+
+Glean CLI 是供 Codex、Claude Code 等外部 Agent 使用的本机管理入口。它直接调用项目现有的 application service 和 SQLite 数据库，不要求 FastAPI 监听端口，也不会在产品中启动 Agent、聊天界面或模型编排层。
+
+## 调用方式
+
+AI 资讯在采集后自动将英文标题和已有正文/摘要前 600 字符合并翻译，每批最多 10 条。历史记录可运行 `python -m backend.cli content translate-ai --limit 100`，或加 `--source hacker_news` 指定来源。命令从运行环境读取 `DEEPSEEK_API_KEY`，使用 `deepseek-flash` 非思考模式；已存译文自动跳过。返回翻译数量、失败数量、批次数和实际输入/输出/思考 token 数，不需要开启审核、日报或推送流程。
+
+推荐从项目根目录运行：
+
+```powershell
+.\glean.ps1 version
+```
+
+包装脚本优先使用 `D:\Tools\Python310\python.exe`，不存在时回退到 `python`。也可以直接调用：
+
+```powershell
+python -m backend.cli version
+```
+
+全局选项必须放在命令之前：
+
+```powershell
+.\glean.ps1 --env development --format json --pretty content overview --kind news
+```
+
+- `--env development|production|test`：选择环境文件，默认 `development`。
+- `--format json|text`：默认 `json`；只有 JSON 格式属于稳定的 Agent 接口。
+- `--pretty`：缩进 JSON。
+- `--debug`：把未预期错误的堆栈写入 stderr，不污染 stdout。
+
+## 输出契约
+
+正常命令的 stdout 始终只有一个 JSON 文档：
+
+```json
+{
+  "contract_version": 1,
+  "success": true,
+  "command": "content.overview",
+  "data": {},
+  "message": "操作成功",
+  "error": null,
+  "meta": {
+    "app_version": "0.1.0",
+    "environment": "development",
+    "duration_ms": 12.5
+  }
+}
+```
+
+业务日志和长任务进度写入 stderr。Agent 不应通过中文 `message` 判断结果，应检查进程退出码、`success`、`error.type` 和 `data`。
+
+| 退出码 | 含义 |
+|---:|---|
+| `0` | 命令成功；异步爬虫命令已被接受也属于成功 |
+| `1` | 未预期的内部错误 |
+| `2` | 命令参数、JSON 或 Pydantic 模型校验失败 |
+| `3` | 指定资源不存在 |
+| `4` | 业务冲突或当前状态拒绝操作 |
+| `5` | 数据库、worker、配置或外部依赖未就绪 |
+| `6` | 任务已执行但未完整完成，例如交付失败或需要人工确认 |
+| `124` | 等待爬虫终态超时 |
+| `130` | 操作者中断 |
+
+## 首次初始化和状态
+
+`version`、`capabilities` 和缺库状态检查不会创建 SQLite 文件。其他命令只接受当前结构版本的数据库；缺失或过期时会提示显式初始化：
+
+```powershell
+.\glean.ps1 system status
+.\glean.ps1 system init
+```
+
+`system init` 会执行生产配置校验、创建或追加式迁移数据库、为旧数据库生成迁移前备份、迁移管理员密码并初始化爬虫运行状态。普通查询不会自动迁移。
+
+`system status` 默认以数据库/API 就绪度决定退出码，同时返回 worker 信息；加 `--pipeline` 后，worker 未就绪也返回退出码 `5`。
+
+## 机器发现
+
+Agent 应先读取能力清单，而不是从帮助文本猜参数：
+
+```powershell
+.\glean.ps1 capabilities
+.\glean.ps1 capabilities delivery.send
+```
+
+返回内容包含命令 ID、实际调用路径、参数、是否需要数据库/worker/`--yes`，以及结构化输入和输出 Schema。
+
+## 结构化 JSON 输入
+
+配置、内容档案、RSS、管理员凭据和手动交付通过 `--input` 读取 UTF-8 JSON 对象：
+
+```powershell
+.\glean.ps1 config ai set --input D:\Config\glean-ai.json
+Get-Content -Raw D:\Config\glean-telegram.json | .\glean.ps1 config telegram set --input -
+```
+
+使用 `--input -` 时 stdin 必须已经连接到管道；CLI 不会停下来等待交互输入。AI 和 Telegram 查询会继续隐藏密钥，掩码 `••••••••` 在保存时表示保留当前密钥。新建分析 API Key 的明文只在创建结果中返回一次。
+
+## 命令目录
+
+### 系统与配置
+
+```powershell
+.\glean.ps1 system status [--pipeline]
+.\glean.ps1 system init
+.\glean.ps1 system maintenance [--force] --yes
+.\glean.ps1 system credentials --input credentials.json --yes
+
+.\glean.ps1 config system get|set
+.\glean.ps1 config timezone get|set
+.\glean.ps1 config schedule get|set
+.\glean.ps1 config automation get|set
+.\glean.ps1 config telegram get|set|test
+.\glean.ps1 config ai get|set|test
+.\glean.ps1 config review get|set --kind news|article
+```
+
+`system credentials` 的 JSON 使用 `current_password`、可选的 `new_username` 和 `new_password`，至少修改一项。新密码需要 12–256 个字符，不能过于简单或与当前密码相同。账号始终由数据库管理，环境变量只用于首次初始化；修改成功会使全部旧登录失效。首次设置或忘记密码时，在项目根目录运行 `python -m backend.reset_admin`，按隐藏输入提示设置新密码；无需修改数据库或把密码写进命令参数。
+
+### 内容和公开读取
+
+```powershell
+.\glean.ps1 content overview --kind news
+.\glean.ps1 content stats --kind article
+.\glean.ps1 content list --scope incoming|events|archive|blocked|review|selected|discarded
+.\glean.ps1 content export --scope selected --output D:\Exports\selected.json
+.\glean.ps1 content delete --scope incoming|archive|review --id 12 --yes
+.\glean.ps1 content restore --scope archive|blocked --id 12 --yes
+.\glean.ps1 content requeue --id 12
+.\glean.ps1 content requeue-all --kind news
+.\glean.ps1 content clear-decisions --kind news --yes
+.\glean.ps1 content restore-blocked-all --kind news
+
+.\glean.ps1 public content --stream briefs|longform [--publication daily-briefs]
+.\glean.ps1 public reports [--kind news|article] [--publication daily-briefs]
+.\glean.ps1 public search --query "稳定币" --kind all [--publication daily-briefs]
+.\glean.ps1 public rss --kind news [--publication daily-briefs]
+```
+
+列表命令支持 `--page`、`--limit`、`--source`、`--keyword` 和 `--kind`。导出支持日期、关键词、来源、内容类型和字段过滤；默认拒绝覆盖已有文件，只有 `--overwrite` 才会替换。成功结果返回绝对路径、条数、字节数和 SHA-256。
+
+### 爬虫和流水线
+
+```powershell
+.\glean.ps1 scraper list
+.\glean.ps1 scraper status [name]
+.\glean.ps1 scraper configure <name> --interval 60 --limit 20
+.\glean.ps1 scraper run <name> --items 10
+.\glean.ps1 scraper run <name> --items 10 --wait --timeout 600
+.\glean.ps1 scraper stop <name> [--wait]
+.\glean.ps1 scraper command <command-id>
+.\glean.ps1 scraper wait <command-id> --timeout 600
+
+.\glean.ps1 pipeline cluster --hours 24 --threshold 0.5 --kind news
+.\glean.ps1 pipeline similarity <first-id> <second-id>
+.\glean.ps1 pipeline blocklist-apply --hours 24 --kind news
+.\glean.ps1 pipeline review --hours 8 --kind news
+.\glean.ps1 pipeline cycle --yes
+```
+
+`scraper run`、`scraper stop` 和 `scraper wait` 执行前都会统一检查 worker 租约、版本和就绪状态；worker 未就绪时返回退出码 `5`，不会继续入队或无效等待。普通 `scraper run` 在命令入队后返回；`--wait` 会继续等待实际抓取进入 `idle` 或 `error`，而不是只等待命令被领取。流水线命令沿用 `content-pipeline` 租约，已有任务执行时不会并行运行。
+
+### 黑名单、档案和资源
+
+```powershell
+.\glean.ps1 blocklist list --kind news
+.\glean.ps1 blocklist add "空投骗局" --match-type contains --kind news
+.\glean.ps1 blocklist remove 12 --yes
+
+.\glean.ps1 profile list [--kind news|article]
+.\glean.ps1 profile save default-news --input profile.json
+.\glean.ps1 rss list
+.\glean.ps1 rss create --input source.json
+.\glean.ps1 rss update 12 --input source.json
+.\glean.ps1 rss delete 12 --yes
+
+.\glean.ps1 analyst-key list
+.\glean.ps1 analyst-key create --name research-agent --notes "本机研究任务"
+.\glean.ps1 analyst-key enable|disable 12
+.\glean.ps1 analyst-key delete 12 --yes
+```
+
+`profile save` 的命令行 slug 与 JSON 中的 `slug` 必须一致。RSS 更新使用命令行 ID 定位记录；运行中的 RSS 抓取任务仍由现有 service 阻止修改或删除。
+
+### 事件证据与人工编辑
+
+```powershell
+.\glean.ps1 event get 42
+.\glean.ps1 event evidence 42 108 --input evidence.json
+.\glean.ps1 event update add 42 --input event-update.json
+.\glean.ps1 event fact add 42 --input event-fact.json
+.\glean.ps1 event fact update 7 --input event-fact-update.json
+.\glean.ps1 event relation add 42 --input event-relation.json
+.\glean.ps1 event classify 42
+.\glean.ps1 intelligence classify [--hours 168] [--limit 500]
+.\glean.ps1 editorial get 77
+.\glean.ps1 editorial update 77 --input editorial-edit.json
+.\glean.ps1 editorial restore 77 3
+```
+
+`event evidence` 维护来源角色、证据组、引用源、独立性、核验状态和说明。关键事实可引用同事件来源并分别控制核验状态、置信度与公开性；事件关系支持相关、原因、结果、后续、矛盾与同一故事。自动识别使用实体名称、符号、别名和叙事关键词，人工关系不会被规则覆盖。`editorial update` 每次都会生成新修订；`editorial restore` 把历史修订恢复为一个新的当前版本，不覆盖修订历史。
+
+### 发布频道、渠道、草稿与更正
+
+```powershell
+.\glean.ps1 publication list
+.\glean.ps1 publication update 1 --input publication.json
+.\glean.ps1 channel list
+.\glean.ps1 channel save [--id 2] --input channel.json
+.\glean.ps1 channel test 2 --yes
+.\glean.ps1 draft list [--status draft|scheduled|publishing|published|cancelled]
+.\glean.ps1 draft create --input draft.json
+.\glean.ps1 draft update 12 --input draft-update.json
+.\glean.ps1 draft preview 12
+.\glean.ps1 draft publish 12 --yes
+.\glean.ps1 draft publish 12 --website-only --yes
+.\glean.ps1 draft publish-due --limit 100 --yes
+.\glean.ps1 correction list
+.\glean.ps1 correction create --input correction.json
+.\glean.ps1 correction publish 9 --yes
+```
+
+没有配置 AI 审核或外部投递渠道时，可通过 `editorial update` 填写摘要、入选依据并设置 `review_status: selected`，随后创建草稿并执行 `draft publish ID --website-only --yes`。网站发布要求公开且启用的频道，只写入站内报告和公开条目，不发送外部消息，也不改变外部投递状态。后台的“人工审核”和“仅发布到网站”按钮提供相同入口。
+
+发布频道可设置公开路径、RSS、摘要频率、时间、时区、模板和投递目标。模板支持 `title_prefix`、`title_suffix`、`intro`、`footer` 和周报 `weekday`。渠道类型支持 `telegram`、`email`、`discord`、`slack` 和 `webhook`，具体配置见 [`INTELLIGENCE_WORKFLOWS.md`](../guides/intelligence-workflows.md)。`draft preview` 使用实际发布排版器但不发送或创建交付记录。草稿和更正都使用持久化交付状态机；重试不会重新发送已经确认成功的分段。
+
+### 实体、叙事、关注列表和提醒
+
+```powershell
+.\glean.ps1 entity list [--type asset] [--query BTC]
+.\glean.ps1 entity save [--id 1] --input entity.json
+.\glean.ps1 entity attach 42 --input event-entity.json
+.\glean.ps1 narrative list [--enabled-only]
+.\glean.ps1 narrative save [--id 3] --input narrative.json
+.\glean.ps1 narrative attach 42 --input event-narrative.json
+.\glean.ps1 watchlist list
+.\glean.ps1 watchlist save [--id 5] --input watchlist.json
+.\glean.ps1 alert list
+.\glean.ps1 alert save [--id 8] --input alert.json
+.\glean.ps1 alert evaluate [--id 8] [--hours 24]
+.\glean.ps1 alert matches [--status pending] [--limit 200]
+.\glean.ps1 alert deliver --limit 200 --yes
+.\glean.ps1 analyst-subscription list
+.\glean.ps1 analyst-subscription create --input subscription.json
+.\glean.ps1 analyst-subscription update 3 --input subscription-update.json
+.\glean.ps1 analyst-subscription deliver [--id 3] --yes
+```
+
+提醒条件、静默时段和每日/每周汇总字段见 [`INTELLIGENCE_WORKFLOWS.md`](../guides/intelligence-workflows.md)。提醒规则引用的关注列表、实体、叙事和投递渠道必须已经存在。分析师订阅只使用 Webhook，只有远端确认送达后才推进变更游标；投递命令需要 `--yes`。
+
+### 来源运营与市场影响
+
+```powershell
+.\glean.ps1 source list
+.\glean.ps1 source update blockbeats-news --input source.json
+.\glean.ps1 source snapshot [--key blockbeats-news] [--hours 24]
+.\glean.ps1 source incidents [--status open] [--limit 200]
+.\glean.ps1 source incident update 6 --input incident-status.json
+.\glean.ps1 market instrument list
+.\glean.ps1 market instrument save [--id 2] --input instrument.json
+.\glean.ps1 market event 42
+.\glean.ps1 market refresh 42
+.\glean.ps1 market snapshot 42 2 --input snapshot.json
+.\glean.ps1 market expectation 42 2 --input expectation.json
+```
+
+来源 `enabled=false` 会从定时采集调度中排除，但不阻止操作者显式执行补采命令。行情提供方支持 `binance` 和 `manual`；自动刷新只请求已经到达观察时间且尚未保存的窗口。
+
+### AI 质量与固定评测
+
+```powershell
+.\glean.ps1 ai-quality summary [--days 30]
+.\glean.ps1 ai-quality invocations [--stage review] [--provider primary] [--profile daily-briefs]
+.\glean.ps1 ai-quality case list [--enabled]
+.\glean.ps1 ai-quality case save [--id 4] --input evaluation-case.json
+.\glean.ps1 ai-quality evaluate [--input evaluation-run.json] --yes
+```
+
+`ai-quality evaluate` 会实际调用已配置的 AI 端点，因此需要 `--yes`。评测样例不会进入正常审核队列，但调用耗时、Token 和费用仍会记录。
+
+### 旧版 Telegram 交付
+
+```powershell
+.\glean.ps1 delivery daily --kind news --operation-key daily:news:20260824:agent --yes
+.\glean.ps1 delivery send --input delivery.json --yes
+.\glean.ps1 delivery retry --operation-key manual:news:20260824:agent --yes
+.\glean.ps1 delivery operations --limit 50 [--status failed]
+.\glean.ps1 delivery operation --operation-key manual:news:20260824:agent
+.\glean.ps1 delivery test --yes
+```
+
+手动发送 JSON 与 HTTP API 使用同一模型：
+
+```json
+{
+  "entries": [
+    {"scope": "selected", "id": 12},
+    {"scope": "archive", "id": 18}
+  ],
+  "operation_key": "manual:news:20260824:agent"
+}
+```
+
+CLI 不自动生成操作键。调用方必须在逻辑任务级保存稳定的 `operation_key`，相同任务重试时继续使用同一值。`failed`、`needs_attention`、`pending` 或 `in_progress` 会返回退出码 `6`，并在 `data` 中保留持久化操作状态。
+
+## 高影响操作
+
+CLI 从不进行交互式 y/N 询问。以下操作缺少 `--yes` 时会在调用 service 前以退出码 `2` 拒绝：
+
+- 删除内容、黑名单、RSS 源或分析 API Key；
+- 清空审核结果或恢复归档事件；
+- 修改管理员凭据和执行数据库维护；
+- 运行包含 Telegram 交付的完整流水线；
+- Telegram 测试、日报、手动发送和重试；
+- 渠道测试、草稿发布、到期草稿发布、更正发布和提醒投递；
+- 固定 AI 评测。
+- 分析师 Webhook 变更投递。
+
+`--yes` 只确认这一次命令，不改变项目配置，也不会绕过 service 自身的状态、事务、租约或幂等检查。
+
+## RSS 接入前预览
+
+在“系统配置”的 RSS 来源表单中填写 RSS 地址和解析方式，点击“预览内容”，即可查看最多 3 条条目的作者、时间、原文链接和订阅源正文。无需先填写名称或保存来源。修改地址或解析方式会清除旧预览；失败后可以重试。
+
+预览不创建来源、不写入内容池、不触发审核或投递。内容来自 RSS/Atom 本身，完整性显示为未知；不会将节选宣称为全文，也不自动访问付费正文。正式 RSS 采集保留源提供的正文与段落，不再截取前 500 字符；原有记录不会自动补全文。AI 初筛发送当前审核条目保存的全部正文，不再截取前 1,200 字符；这不意味着已取得原网站全文。
+
+长文审核会使用更多输入 Token。正文超过所配置模型的上下文容量时，沿用现有端点故障切换和错误记录，条目保留待处理，不自动裁掉后文或按低质量舍弃。旧审核结果不会自动重跑。入选后的内容补充仍采用原有来源摘录方式，本次仅增强初筛读取范围。
+
+CLI 同样支持预览，且不需要数据库初始化或 worker：
+
+```powershell
+'{"feed_url":"https://example.substack.com/feed","parser_type":"generic","limit":3}' | .\glean.ps1 rss preview --input -
+```
+
+`limit` 为 1–5，默认 3。输出包含 `feed_url`、`notice`、`items`，条目包含 `title`、`author`、`published_at`、`url`、`content`、`content_origin=feed` 和 `completeness=unknown`。HTTP 入口为需要登录的 `POST /api/rss/preview`，输入与 CLI 一致。预览成功不代表正式启用后不会进入既有自动流程，保存来源仍按原有配置运行。

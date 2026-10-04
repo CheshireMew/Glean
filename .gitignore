@@ -1,5 +1,7 @@
 # Python
 __pycache__/
+.pytest_cache/
+.ruff_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -38,6 +40,12 @@ yarn-error.log
 # 日志
 *.log
 logs/
+# Local data, archives and machine-specific tool settings.
+/data/*
+!/data/README.md
+/archive/
+.claude/settings.local.json
+.claude/worktrees/
 
 # 构建输出
 dist/

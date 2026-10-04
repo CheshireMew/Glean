@@ -124,7 +124,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
         database.db_path = str(legacy_path)
         init_database()
 
-        backups = list((legacy_path.parent / "archive" / "database-backups").glob("legacy-before-unversioned-*.db"))
+        backups = list((legacy_path.parent / "backups").glob("legacy-before-unversioned-*.db"))
         self.assertEqual(len(backups), 1)
         backup_conn = sqlite3.connect(backups[0])
         try:

@@ -16,13 +16,24 @@ from .sqlite_migration_plan import (
     resolve_migration_plan,
 )
 logger = getLogger("glean.database")
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
+
+def default_database_path(project_root: Path) -> Path:
+    current = project_root / "data" / "ainews.db"
+    legacy = project_root / "ainews.db"
+    if current.exists() and legacy.exists():
+        raise RuntimeError("data/ainews.db 与根目录 ainews.db 同时存在，请先确认需要使用的数据库")
+    # Older checkouts keep using their existing database until it is moved explicitly.
+    return legacy if legacy.exists() else current
 
 
 class Database(DatabaseBase):
     def __init__(self, db_path: str | None = None):
         if db_path is None:
-            # Keep the existing database filename across the Glean rename.
-            db_path = str(Path(__file__).resolve().parents[4] / "ainews.db")
+            selected = default_database_path(PROJECT_ROOT)
+            selected.parent.mkdir(parents=True, exist_ok=True)
+            db_path = str(selected)
         self.db_path = db_path
 
     def connect(self):
@@ -165,7 +176,7 @@ class Database(DatabaseBase):
 
     def _backup_database(self, source: sqlite3.Connection, previous_version: str | None) -> Path:
         db_path = Path(self.db_path).resolve()
-        backup_dir = db_path.parent / "archive" / "database-backups"
+        backup_dir = db_path.parent / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
         old_label = (previous_version or "unversioned").replace(".", "-")
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")

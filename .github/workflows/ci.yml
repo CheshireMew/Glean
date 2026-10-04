@@ -41,7 +41,7 @@ jobs:
       - name: Verify backend
         run: |
           python -m compileall -q backend
-          python -m ruff check backend shared --select F --exclude backend/archive
+          python -m ruff check backend shared --select F
           python -m unittest discover -s backend/tests -v
 
       - name: Set up Node.js
