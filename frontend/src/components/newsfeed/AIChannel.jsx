@@ -48,7 +48,7 @@ export default function AIChannel({ query = '' }) {
             <button type="button" aria-pressed={!source} onClick={() => setSource('')} className={`rounded-lg px-3 py-1.5 text-xs ${!source ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>全部来源</button>
             {sources.map((item) => <button key={item.key} type="button" aria-pressed={source === item.key} onClick={() => setSource(item.key)} className={`rounded-lg px-3 py-1.5 text-xs ${source === item.key ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>{item.name}<span className="ml-2 opacity-60">{item.total}</span></button>)}
         </nav>
-        <p className="px-6 py-3 text-xs leading-relaxed text-gray-400 dark:text-gray-500">{SOURCE_NOTES[source] || '打开页面自动检查更新，停留时自动刷新。'}英文内容自动翻译为中文。</p>
+        <p className="px-6 py-3 text-xs leading-relaxed text-gray-400 dark:text-gray-500">{SOURCE_NOTES[source] || '后台按采集设置自动更新，页面会自动显示最新内容。'}英文内容自动翻译为中文。</p>
         {update.message && <p role="status" className="px-6 pb-3 text-xs text-amber-700 dark:text-amber-400">{update.message}</p>}
         {pausedSources.length > 0 && <details className="px-6 pb-3 text-xs text-amber-700 dark:text-amber-400"><summary>部分来源暂未更新，已有内容仍可阅读</summary>{pausedSources.map((item) => <p key={item.key} className="mt-2">{item.name}：{item.message}</p>)}</details>}
         {error && <div role="alert" className="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">加载失败：{error}<button type="button" onClick={reloadContent} className="ml-4 underline">重试</button></div>}

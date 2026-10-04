@@ -4,7 +4,6 @@ import json
 from typing import Dict, Optional
 
 from ..core.exceptions import ValidationError
-from ..domain.ai_sources import AI_SOURCES
 
 
 class ScraperRuntimeStateService:
@@ -114,7 +113,7 @@ class ScraperRuntimeStateService:
                 **states.get(name, {"scraper_name": name, "status": "idle", "logs": [], "items_scraped": 0}),
                 **self.get_scraper_config(name, definition, configs.get(self._config_key(name))),
                 **self.get_source_cooldown(name, definition),
-                "refresh_on_view": name in {source["key"] for source in AI_SOURCES},
+                "refresh_on_view": False,
             }
         return payload
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from logging import getLogger
-from ..domain.ai_sources import AI_SOURCES
 
 logger = getLogger("uvicorn")
 
@@ -39,8 +38,7 @@ class ScraperScheduleService:
 
     def can_collect(self, name: str, is_working_hours) -> bool:
         return bool(
-            name not in {source["key"] for source in AI_SOURCES}
-            and is_working_hours()
+            is_working_hours()
             and self._scraper_registry.get(name)
             and self._runtime_state.get_scraper_config(name).get("interval")
             and (self._source_operations is None or self._source_operations.is_source_enabled(name))

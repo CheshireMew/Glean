@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Callable, Dict, Iterable
+from ..core.outbound_http import safe_http_client
+from ..core.exceptions import ValidationError
+from ..core.config import settings
 
 @dataclass(frozen=True)
 class AIEndpoint:
@@ -26,6 +29,7 @@ class ResilientAIClient:
         concurrency: int,
         throttle_seconds: float = 0.0,
         telemetry_observer: Callable[[Dict], None] | None = None,
+        budget=None,
     ):
         from openai import AsyncOpenAI
 
@@ -38,6 +42,7 @@ class ResilientAIClient:
                 base_url=endpoint.base_url,
                 max_retries=0,
                 timeout=60.0,
+                http_client=safe_http_client('integration', timeout=60),
             )
             for endpoint in self.endpoints
         }
@@ -46,6 +51,7 @@ class ResilientAIClient:
         self._throttle_lock = asyncio.Lock()
         self._last_request_at = 0.0
         self.telemetry_observer = telemetry_observer
+        self.budget = budget
 
     async def _wait_for_slot(self) -> None:
         if self.throttle_seconds <= 0:
@@ -98,6 +104,9 @@ class ResilientAIClient:
                     started_clock = time.perf_counter()
                     try:
                         await self._wait_for_slot()
+                        if settings.ENV == 'production' and self.budget is None:
+                            raise ValidationError('生产 AI 请求必须配置共享费用限制')
+                        reservation = self.budget.reserve(endpoint, system, user, max_tokens) if self.budget else None
                         response = await client.chat.completions.create(
                             model=endpoint.model,
                             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -112,6 +121,9 @@ class ResilientAIClient:
                             input_tokens * endpoint.input_price_per_million
                             + output_tokens * endpoint.output_price_per_million
                         ) / 1_000_000
+                        # Missing usage is not evidence that the remote call was free.
+                        if usage is not None and self.budget:
+                            self.budget.settle(reservation, cost)
                         completed_at = datetime.now(timezone.utc)
                         self._observe({
                             **context,
@@ -132,6 +144,8 @@ class ResilientAIClient:
                             ).hexdigest(),
                         })
                         return parsed
+                    except ValidationError:
+                        raise
                     except Exception as exc:
                         errors.append(f"{endpoint.name} attempt {attempt + 1}: {exc}")
                         completed_at = datetime.now(timezone.utc)

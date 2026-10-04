@@ -1,11 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { getAuthSession } from '../api/auth';
-import { setAuthToken } from './session';
+import { setBrowserSession } from './session';
 import { useAuthSession } from './useAuthSession';
 
 vi.mock('../api/auth', () => ({ getAuthSession: vi.fn(), logout: vi.fn() }));
-const seedToken = () => setAuthToken(`header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 60 }))}.signature`);
+const seedToken = () => setBrowserSession(`header.${btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 60 }))}.signature`);
 
 describe('restoring a login', () => {
     it('waits for server validation before allowing the admin page', async () => {

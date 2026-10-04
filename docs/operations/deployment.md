@@ -1,258 +1,110 @@
-# Glean 部署指南 (Target: new.blacknico.com)
+# Glean 服务器部署
 
-本指南专门针对将 Glean 部署到服务器并使用域名 `new.blacknico.com` 的场景。
+本机验收平台是 Windows。以下 Ubuntu/Debian 配置供服务器部署使用；仓库已提供生产配置，但没有在你的实际服务器上完成运行验收。
 
-## 🎯 目标架构
+## 部署前提
 
-- **域名**: `https://new.blacknico.com`
-- **前端 (展示)**: `https://new.blacknico.com/` (NewsFeed)
-- **前端 (管理)**: `https://new.blacknico.com/admin` (Dashboard)
-- **后端 API**: `https://new.blacknico.com/api` (反向代理到本地 8000 端口)
+浏览器与 API 使用同一个 HTTPS 域名，例如 `https://new.blacknico.com`。只向公网开放 80/443，API 的 8000 端口绑定 `127.0.0.1`。API 与 worker 都使用普通账号 `glean`，不能用 root 运行服务。不要将 Windows 启动器或 Vite 开发服务用于公网部署。
 
-## ✅ 1. 本地准备工作
+前端使用 Node.js 22，后端使用 Python 3.10 以上版本。依赖分别按 `frontend/package-lock.json` 和 `requirements.lock` 安装。发布时需要构建当前版本的前端，不能沿用旧 `dist`。
 
-在将代码上传到服务器之前，请确保本地配置正确。
+## 准备账号、代码和目录
 
-1. **前端配置已更新**:
-
-   - 路由已调整：首页 `/` 直接显示 NewsFeed。
-   - 生产环境配置 (`frontend/.env.production`) 已设置为 `VITE_API_BASE_URL=https://new.blacknico.com`。
-
-2. **构建并核对前端**:
-   必须从准备发布的同一份源码重新生成静态文件，不能上传工作区里以前留下的 `dist`：
-
-   ```bash
-   cd frontend
-   npm run build:release
-   npm run verify:release
-   # 生成的文件位于 frontend/dist 目录
-   ```
-
-3. **后端代码准备**:
-   确保 `backend/main.py`、`requirements.txt`、`requirements.lock` 和 `frontend/package-lock.json` 来自同一版本。
-
-## 🚀 2. 服务器环境准备 (Ubuntu/Debian 示例)
-
-登录您的服务器，安装必要的软件：
-
-0. **检查已安装软件** (可选):
-   如果您不确定是否已安装 Node.js，请运行：
-   ```bash
-   node -v
-   npm -v
-   ```
-   前端当前要求 Node.js 22；较旧版本即使能执行 `npm install`，也不作为支持环境。
+服务器上安装 Python、venv、Nginx、Git 和 Certbot。示例目录为 `/var/www/glean`；将代码克隆到这里，代码和虚拟环境由部署账号维护，服务账号只读。私有仓库使用 SSH 或凭据管理器，不把访问 Token 写入 URL。
 
 ```bash
-# 更新系统
-sudo apt update && sudo apt upgrade -y
-
-# 安装 Python 3.10+, Node.js, Nginx, Git
-sudo apt install python3 python3-pip python3-venv nginx git -y
-
-# 安装 Node.js (如果需要在线构建，可选)
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
+sudo useradd --system --user-group --home-dir /var/lib/glean --shell /usr/sbin/nologin glean
+sudo install -d -o glean -g glean -m 700 /var/lib/glean
+sudo install -d -o root -g glean -m 750 /etc/glean
+cd /var/www/glean
+python3 -m venv venv
+venv/bin/pip install -r requirements.lock
+sudo venv/bin/playwright install-deps chromium
+sudo install -d -o glean -g glean -m 700 /var/www/glean/data
+sudo -u glean env PLAYWRIGHT_BROWSERS_PATH=/var/lib/glean/browsers venv/bin/playwright install chromium
+sudo install -o root -g glean -m 640 scripts/server/production.env.example /etc/glean/production.env
 ```
 
-## 📦 3. 后端部署
+已有 `data/` 时先保留备份，再把该目录及备份的所有者交给 `glean`。代码、虚拟环境和静态前端不能由服务账号写入。不要上传本机环境文件、数据库或日志到前端目录。
 
-建议将项目代码放在 `/var/www/glean` 目录。
+## 初始化生产配置
 
-1. **拉取代码 (首次部署)**:
+编辑 `/etc/glean/production.env`，填写实际域名及同源的 `ALLOWED_ORIGINS`。管理员账号、初始化密码和签名密钥可以保持空值：交互设置账号，签名密钥由应用生成并保存在受保护的数据库中。
 
-   ```bash
-   # 创建目录
-   sudo mkdir -p /var/www/glean
-   # 设置权限（将 current_user 替换为您的用户名，如 ubuntu）
-   sudo chown -R $USER:$USER /var/www/glean
-
-   # 克隆代码
-   git clone https://github.com/CheshireMew/Glean.git /var/www/glean
-
-   # 💡 私有仓库提示：
-   # 如果是私有仓库，推荐使用 Personal Access Token (PAT) 拉取：
-   # git clone https://<your_token>@github.com/<username>/<repo>.git /var/www/glean
-
-   cd /var/www/glean
-   ```
-
-   _(如果是后续更新代码，只需在目录内执行 `git pull origin main`)_
-
-2. **设置 Python 环境**:
-
-   ```bash
-   cd /var/www/glean
-   python3 -m venv venv
-   source venv/bin/activate
-
-   # 安装依赖
-   pip install -r requirements.lock
-
-   # 安装 Playwright 浏览器
-   playwright install chromium
-
-   # 确保 deps
-   playwright install-deps
-   ```
-
-3. **配置 Systemd 服务 (实现 24/7 运行)**:
-   这是**最关键**的一步。使用 Systemd 守护进程可以确保：
-
-   - 您的后端程序在后台 **24 小时不间断运行**。
-   - 即使程序意外崩溃或服务器重启，它也会 **自动重启**。
-
-   创建服务文件：
-   `sudo nano /etc/systemd/system/glean-backend.service`
-
-   ```ini
-   [Unit]
-   Description=Glean Backend Service
-   After=network.target
-
-   [Service]
-   User=root
-   # 如果不是root用户，请修改为实际用户
-   WorkingDirectory=/var/www/glean
-   Environment="GLEAN_ENV=production"
-   Environment="PATH=/var/www/glean/venv/bin:/usr/local/bin:/usr/bin:/bin"
-   ExecStart=/var/www/glean/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips '*'
-   Restart=always
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-   **启动服务**:
-
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable glean-backend
-   sudo systemctl start glean-backend
-   sudo systemctl status glean-backend
-   ```
-
-   API 进程不会执行采集和自动流水线，还需要单独运行 worker。创建 `/etc/systemd/system/glean-worker.service`：
-
-   ```ini
-   [Unit]
-   Description=Glean Worker
-   After=network.target glean-backend.service
-
-   [Service]
-   User=root
-   WorkingDirectory=/var/www/glean
-   Environment="GLEAN_ENV=production"
-   Environment="PATH=/var/www/glean/venv/bin:/usr/local/bin:/usr/bin:/bin"
-   ExecStart=/var/www/glean/venv/bin/python -m backend.worker
-   Restart=always
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable glean-worker
-   sudo systemctl start glean-worker
-   sudo systemctl status glean-worker
-   ```
-
-   生产版本默认读取源码根目录 `VERSION`；只有需要明确覆盖时才设置 `APP_VERSION`，且覆盖值必须与本次发布清单一致。`.env.production` 还要配置 32 字符以上的 `JWT_SECRET_KEY`、管理员账号密码、`PUBLIC_SITE_URL=https://new.blacknico.com`，以及不包含 localhost 的 `ALLOWED_ORIGINS=https://new.blacknico.com`。生产配置不完整时 API 会拒绝启动。worker 使用数据库租约阻止两个实例同时运行。
-
-   首次升级旧数据库时，应用会先在数据库同级的 `backups/`（默认 `data/backups/`） 生成快照，再写入新的 `schema_migrations` 版本。部署前仍应保留服务器级备份，并确认磁盘有足够空间。
-
-   启动后依次检查 `curl -f http://127.0.0.1:8000/health/live`、`curl -f http://127.0.0.1:8000/health/ready` 和 `curl -f http://127.0.0.1:8000/health/pipeline`。前两条确认 API 及数据库可以接流量，第三条确认 worker 心跳有效；不要只凭 systemd 的 `active` 判断上线完成。
-
-## 🎨 4. 前端部署
-
-将刚刚通过 `npm run verify:release` 的 `frontend/dist` 上传到服务器的全新目录。不要把文件覆盖到旧目录中，否则已经不再被 `index.html` 引用的旧资源仍会混入发布物。可以先把旧目录移动到带时间戳的归档目录，再把新目录切换为正式目录。
+环境文件使用不含空格的 `KEY=value` 形式，便于 systemd 和下面的初始化命令共同读取。以服务账号加载同一份配置并初始化：
 
 ```bash
-# 服务器：保留旧静态文件作为回退证据，不原地混合
-mv /var/www/glean/frontend/dist /var/www/glean/archive/frontend-dist-before-0.1.0
-mkdir -p /var/www/glean/frontend/dist
+sudo -u glean bash -c 'set -a; source /etc/glean/production.env; set +a; cd /var/www/glean; venv/bin/python -m backend.security_setup; venv/bin/python -m backend.reset_admin --username your-admin-name'
+```
 
-# 本地：上传清单内的完整新目录
-# scp -r frontend/dist/* user@your-server:/var/www/glean/frontend/dist/
+`reset_admin` 会交互询问密码，不把密码放进命令行。使用全新且至少 12 位的密码。应用拒绝已知进入仓库历史的密码和签名密钥；Git 历史仍保留原提交，不可再使用其中的值。源码仓库、环境文件和备份不能由 Nginx 提供下载。
 
-# 服务器源码目录：再次核对文件集合与哈希
+生产环境数据库、备份和环境文件需要限制为服务账号及必要管理员可读。Linux 目录为 0700，敏感文件为 0600；环境文件由 root 管理时可用 root:glean、0640。Windows 本机已由 `backend.security_setup` 收紧 ACL。
+
+## 构建前端
+
+修改 `frontend/.env.production` 的 API 地址为实际 HTTPS 域名，前端与 API 必须同源。使用锁定依赖执行：
+
+```bash
 cd /var/www/glean/frontend
+npm ci
+npm run lint
+npm test
+npm run build:release
 npm run verify:release
 ```
 
-如果在服务器构建，使用 `cd frontend && npm ci && npm run lint && npm test && npm run build:release && npm run verify:release`。本项目当前只在 Windows 上完成验收；这份 Linux 部署流程必须先在预发布主机验证，再用于正式切换。
+升级时使用全新的构建目录，保留旧目录供回退，避免新旧资源混合。普通开发检查使用 `npm run build`，不会生成安装包。
 
-## 🌐 5. Nginx 配置 (核心步骤)
+## 启动 API 与 worker
 
-配置 Nginx 处理域名、SSL 和反向代理。
+直接安装仓库中完整的服务配置，避免遗漏环境文件、沙箱目录或写权限限制：
 
-1. **创建配置文件**:
-   `sudo nano /etc/nginx/sites-available/new.blacknico.com`
+```bash
+cd /var/www/glean
+sudo install -m 644 scripts/server/glean-backend.service /etc/systemd/system/glean-backend.service
+sudo install -m 644 scripts/server/glean-worker.service /etc/systemd/system/glean-worker.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now glean-backend glean-worker
+sudo systemctl status glean-backend glean-worker
+curl -f http://127.0.0.1:8000/health/live
+curl -f http://127.0.0.1:8000/health/ready
+curl -f http://127.0.0.1:8000/health/pipeline
+```
 
-   ```nginx
-   server {
-       server_name new.blacknico.com;
+API 不执行定时任务；worker 必须单独运行。worker 使用数据库租约避免重复实例。生产浏览器启用 Chromium 沙箱，必须验证目标服务器支持沙箱；不能为解决启动错误而关闭沙箱或改用 root。
 
-       # 前端静态文件根目录
-       root /var/www/glean/frontend/dist;
-       index index.html;
+首次迁移旧数据库时，应用会在数据库同级 `backups/` 保存快照。快照包含敏感配置，权限与数据库一致。部署前另做服务器备份，并确认剩余磁盘空间。
 
-       gzip on;
-       gzip_vary on;
-       gzip_min_length 1024;
-       gzip_comp_level 6;
-       gzip_types text/plain text/css application/json application/javascript application/xml image/svg+xml;
+## HTTPS 和 Nginx
 
-       # 核心：处理 SPA 路由
-       # 任何找不到的文件都重定向到 index.html，交给 React Router 处理
-       location / {
-           try_files $uri $uri/ /index.html;
-       }
+使用 `scripts/server/nginx.conf` 的完整配置。它包含 HTTPS、Cookie 同源要求、登录与 API 请求限速、请求体限制、页面安全响应头、CSP 和静态资源缓存。用 `$remote_addr` 覆盖访客传入的转发头，API 只信任 `127.0.0.1` 的 Nginx。
 
-       # 后端 API 反向代理
-       location /api/ {
-           proxy_pass http://127.0.0.1:8000;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection "upgrade";
-           proxy_set_header Host $host;
-           proxy_set_header X-Real-IP $remote_addr;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
+首次签发证书时，先启用配置中的 80 端口部分，准备 `/var/www/letsencrypt/.well-known/acme-challenge/`，使用 Certbot webroot 模式签发证书，再启用 443 部分。不要在证书文件尚不存在时直接启用 TLS 配置。
 
-       # 静态资源缓存与压缩是生产发布验收的一部分
-       location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
-           expires 30d;
-           add_header Cache-Control "public, no-transform";
-       }
-   }
-   ```
+```bash
+sudo install -d -m 755 /var/www/letsencrypt/.well-known/acme-challenge
+sudo certbot certonly --webroot -w /var/www/letsencrypt -d new.blacknico.com
+sudo install -m 644 /var/www/glean/scripts/server/nginx.conf /etc/nginx/sites-available/new.blacknico.com
+sudo ln -s /etc/nginx/sites-available/new.blacknico.com /etc/nginx/sites-enabled/new.blacknico.com
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
-2. **启用站点**:
+将示例域名和证书路径替换为实际值，配置放在 Nginx 的 `http` 上下文。如果使用 CDN，需要配置明确的 CDN 可信地址，不能把 API 的代理信任范围改成 `*`。防火墙不开放 8000、5173 和数据库端口；健康检查只在服务器本机访问。
 
-   ```bash
-   sudo ln -s /etc/nginx/sites-available/new.blacknico.com /etc/nginx/sites-enabled/
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ```
+## 采集、发布和费用
 
-3. **配置 SSL (HTTPS)**:
-   使用 Certbot 自动配置 SSL。
-   ```bash
-   sudo apt install certbot python3-certbot-nginx
-   sudo certbot --nginx -d new.blacknico.com
-   ```
-   按照提示完成配置。
+公开页面只读取更新状态。自动更新由 worker 按管理员配置的频率执行，需要开启自动化总开关；来源设为“仅手动”时不参与定时采集。Acquired 已从现行来源中移除。
 
-## 🎉 6. 验证
+内部投递不会自动公开内容。网站展示要求有公开且启用频道的正式发布记录；关闭公开权限后，列表、搜索、RSS 和事件详情同步隐藏。实体的内部 metadata 与别名不会通过公开接口返回。
 
-访问 `https://new.blacknico.com`：
+生产采集只允许访问公网，重定向逐次检查，目标 IP 固定后才发请求，阻止本机、内网、云实例元数据地址和 DNS 重新解析绕过。外部响应限制为 4 MiB，并检查解压后的大小。公网模型、Webhook 等凭据请求必须使用 HTTPS，SMTP 必须使用证书校验的 TLS/SSL。确需连接本机模型、SMTP 或 Webhook 时，用 `GLEAN_PRIVATE_ENDPOINT_HOSTS` 逐个允许精确主机名；采集来源不能使用这些例外。服务器防火墙也应限制服务访问其他内网资源。
 
-- 应该看到新闻列表页面。
-- 只有登录状态下访问 `https://new.blacknico.com/admin` 才能看到管理仪表盘（否则跳转登录页）。
-- 检查网络请求（F12 -> Network），确认 API 请求指向 `https://new.blacknico.com/api/...` 且状态为 200。
-- 检查 `/health/live`、`/health/ready` 和 `/health/pipeline` 返回的 `version`，并确认它与页面 `glean-version` 元数据及 `release-manifest.json` 的 `app_version` 完全一致。
+翻译、审核、补写、连接测试、重试和备用模型共用每日额度。`GLEAN_AI_DAILY_MAX_CALLS` 默认 1000，`GLEAN_AI_DAILY_MAX_COST` 默认 5；金额单位必须与所有端点每百万 Token 的价格一致。远程端点需填写输入和输出价格，翻译价格通过 `GLEAN_TRANSLATION_INPUT_PRICE`、`GLEAN_TRANSLATION_OUTPUT_PRICE` 配置。未填写价格时拒绝生产调用。发送前预留预算，结果不明时保留预留费用，额度按 UTC 日期重置。实际服务账单仍以供应商为准。
 
-历史下线流程已单独保存在本机 `archive/docs/operations/decommissioning.md`，不属于部署步骤，也不随 Git 提交。
+## 上线验证
+
+在目标预发布服务器验证 HTTPS、普通账号的文件权限、Chromium 沙箱、worker 心跳和证书自动续期。确认首页、登录、页面刷新、退出登录及后台写操作正常；匿名请求不能触发采集或访问后台，私有内容不能从列表、搜索、RSS、事件或实体详情读到。
+
+核对页面的版本与本机健康检查版本一致，并确认达到采集或 AI 额度限制时行为符合设置。本项目的 Windows 自动测试不能代替这些目标服务器检查。

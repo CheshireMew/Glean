@@ -12,9 +12,10 @@ class EditorialAIService:
         concurrency: int,
         throttle_seconds: float = 0.0,
         telemetry_observer=None,
+        budget=None,
     ):
         self.client = ResilientAIClient(
-            providers, concurrency, throttle_seconds, telemetry_observer
+            providers, concurrency, throttle_seconds, telemetry_observer, budget
         )
 
     async def review_event(

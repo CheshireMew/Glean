@@ -201,6 +201,14 @@ class ContentPipelineIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2 个来源", prepared.content)
         report_id = daily_report_service.persist_success(prepared)
         self.assertGreater(report_id, 0)
+        self.assertEqual(app_services.public_content.get_public_content('news', 20, 0)['total'], 0)
+        publication = repositories().publications.get_publication_by_profile('daily-briefs')
+        draft = app_services.editorial_workbench.create_draft({
+            'publication_id': publication['id'], 'content_type': 'news', 'title': prepared.title,
+            'items': [{'review_entry_id': entry['id'], 'position': index, 'included': True,
+                       'section': '监管', 'overrides': {}} for index, entry in enumerate(prepared.entries)],
+        }, 'integration-editor')
+        await app_services.publication_workflow.publish_draft(draft['id'], website_only=True)
 
         with TestClient(app) as client:
             response = client.get("/api/public/content", params={"stream": "briefs", "limit": 20, "offset": 0})
@@ -222,7 +230,7 @@ class ContentPipelineIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unchanged.json()["data"]["items"], [])
 
         reports = repositories().daily_reports.list_reports("news", 20, 0)
-        self.assertEqual(reports["total"], 1)
+        self.assertEqual(reports["total"], 2)
         report_items = repositories().daily_reports.execute(
             "SELECT event_id, position, section, source_count FROM daily_report_items WHERE report_id = ?",
             (report_id,),

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import httpx
 
 from ..core.exceptions import BusinessError, ValidationError
+from ..core.outbound_http import safe_http_client
 
 
 class MarketDataGateway:
@@ -17,7 +18,7 @@ class MarketDataGateway:
         symbol = f"{instrument['symbol']}{instrument['quote_symbol']}".upper()
         timestamp_ms = int(observed_at.astimezone(timezone.utc).timestamp() * 1000)
         try:
-            async with httpx.AsyncClient(base_url=self.BINANCE_BASE_URL, timeout=15) as client:
+            async with safe_http_client(base_url=self.BINANCE_BASE_URL, timeout=15) as client:
                 response = await client.get(
                     "/api/v3/klines",
                     params={"symbol": symbol, "interval": "1m", "startTime": timestamp_ms, "limit": 1},

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from ..core.config import settings
 from ..core.exceptions import ConfigurationError, ValidationError
+from ..core.revoked_credentials import is_revoked
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12
@@ -35,6 +36,8 @@ def validate_username(username: str) -> str:
 
 
 def validate_password(password: str, username: str) -> None:
+    if is_revoked('ADMIN_PASSWORD', password):
+        raise ValidationError('该密码曾进入仓库历史，请使用全新的密码')
     if not 12 <= len(password) <= 256:
         raise ValidationError("密码需要 12–256 个字符")
     value = password.strip().casefold()
@@ -46,7 +49,7 @@ def validate_password(password: str, username: str) -> None:
 
 
 def valid_signing_key(key: str) -> bool:
-    return len(key) >= 32 and len(set(key)) >= 12 and not any(
+    return not is_revoked('JWT_SECRET_KEY', key) and len(key) >= 32 and len(set(key)) >= 12 and not any(
         marker in key.lower() for marker in ("change-me", "changeme", "replace", "placeholder", "example", "your_")
     )
 
@@ -128,6 +131,8 @@ class AuthService:
 
     def authenticate_user(self, username: str, password: str) -> bool:
         credentials = self.get_admin_credentials()
+        if is_revoked('ADMIN_PASSWORD', password):
+            return False
         if len(username) > 64 or len(password) > 256:
             return False
         username_ok = safe_equal(username.strip(), credentials.username)

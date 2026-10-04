@@ -17,6 +17,7 @@ from .services.ai_refresh_service import AIRefreshService
 from .services.ai_translation_service import AITranslationService
 from .services.ai_provider_settings_service import AIProviderSettingsService
 from .services.ai_quality_service import AIQualityService
+from .services.ai_budget import AIBudget
 from .services.analyst_access_service import AnalystAccessService
 from .services.analyst_data_service import AnalystDataService
 from .services.analyst_subscription_service import AnalystSubscriptionService
@@ -75,6 +76,7 @@ class AppServices:
 
     def __init__(self) -> None:
         transaction = transactional_repositories
+        self.ai_budget = AIBudget(transaction)
         self.ai_content = AIContentService(_repository("ai_content"), _repository("rss_sources"), _repository("wechat"))
 
         config_repo = _repository("config")
@@ -90,7 +92,7 @@ class AppServices:
         review_repo = _repository("review")
 
         self.ai_provider_settings = AIProviderSettingsService(config_repo, transaction)
-        self.ai_quality = AIQualityService(_repository("ai_quality"), self.ai_provider_settings)
+        self.ai_quality = AIQualityService(_repository("ai_quality"), self.ai_provider_settings, self.ai_budget)
         self.automation_settings = AutomationSettingsService(config_repo, transaction)
         self.delivery_settings = DeliverySettingsService(config_repo, transaction)
         self.system_settings = SystemSettingsService(config_repo)
@@ -183,7 +185,7 @@ class AppServices:
         )
         self.operation_leases = OperationLeaseService(runtime_lease_repo)
         self.ai_translation = AITranslationService(
-            _repository("ai_content"), _repository("rss_sources"), self.operation_leases
+            _repository("ai_content"), _repository("rss_sources"), self.operation_leases, budget=self.ai_budget
         )
         self.scraper_runs = ScraperRunService(
             _repository("news"),
@@ -216,7 +218,7 @@ class AppServices:
             transaction,
             settings.APP_VERSION,
         )
-        self.ai_refresh = AIRefreshService(self.scraper_commands)
+        self.ai_refresh = AIRefreshService(self.scraper_commands, self.scraper_runtime_state)
 
         self.telegram_messages = TelegramMessageService(
             settings.PUBLIC_TELEGRAM_URL or settings.PUBLIC_SITE_URL
@@ -311,6 +313,7 @@ class AppServices:
             _repository("review_admin"),
             _repository("ai_quality"),
             transaction,
+            self.ai_budget,
         )
         self.event_clustering = EventClusteringService(
             _repository("news_runtime"),

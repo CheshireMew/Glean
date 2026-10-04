@@ -10,6 +10,7 @@ import httpx
 
 from .browser_runtime import close_browser, fetch_page_with_delay, init_browser
 from .source_access import source_access, SourceAccessError
+from ...core.outbound_http import safe_http_client
 
 
 class SourceTransport(ABC):
@@ -49,9 +50,8 @@ class HttpSourceTransport(SourceTransport):
         self.access = access or source_access
 
     async def start(self, owner) -> None:
-        self.client = httpx.AsyncClient(
+        self.client = safe_http_client(
             timeout=self.timeout_seconds,
-            follow_redirects=False,
             headers={
                 "User-Agent": "Glean/0.1 (+https://github.com/CheshireMew/Glean)",
                 "Accept": "application/json, application/rss+xml, application/atom+xml, text/xml, text/html;q=0.9, */*;q=0.8",

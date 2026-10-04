@@ -1,0 +1,22 @@
+[Unit]
+Description=Glean Worker
+After=network.target glean-backend.service
+
+[Service]
+User=glean
+Group=glean
+WorkingDirectory=/var/www/glean
+Environment=GLEAN_ENV=production
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/glean/browsers
+EnvironmentFile=/etc/glean/production.env
+ExecStart=/var/www/glean/venv/bin/python -m backend.worker
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/www/glean/data /var/lib/glean
+
+[Install]
+WantedBy=multi-user.target

@@ -51,18 +51,13 @@ export default function VirtualWindowList({
     ariaLabel,
 }) {
     const containerRef = useRef(null);
-    const measuredSizes = useRef(new Map());
-    const [measurementVersion, setMeasurementVersion] = useState(0);
+    const [measurements, setMeasurements] = useState({ items, sizes: new Map() });
+    const measuredSizes = measurements.items === items ? measurements.sizes : new Map();
     const [viewport, setViewport] = useState(() => ({
         scrollY: typeof window === 'undefined' ? 0 : window.scrollY,
         height: typeof window === 'undefined' ? 800 : window.innerHeight || 800,
         containerTop: 0,
     }));
-
-    useEffect(() => {
-        measuredSizes.current.clear();
-        setMeasurementVersion((version) => version + 1);
-    }, [items]);
 
     useEffect(() => {
         if (items.length <= VIRTUALIZE_AFTER) return undefined;
@@ -93,16 +88,18 @@ export default function VirtualWindowList({
     }, [items.length]);
 
     const onSize = useCallback((key, size) => {
-        if (!Number.isFinite(size) || size <= 0 || measuredSizes.current.get(key) === size) return;
-        measuredSizes.current.set(key, size);
-        setMeasurementVersion((version) => version + 1);
-    }, []);
+        if (!Number.isFinite(size) || size <= 0) return;
+        setMeasurements((previous) => {
+            const sizes = previous.items === items ? previous.sizes : new Map();
+            if (sizes.get(key) === size) return previous;
+            return { items, sizes: new Map(sizes).set(key, size) };
+        });
+    }, [items]);
 
     const layout = (() => {
-        void measurementVersion;
         const offsets = [0];
         for (const item of items) {
-            offsets.push(offsets[offsets.length - 1] + (measuredSizes.current.get(itemKey(item)) || estimateSize));
+            offsets.push(offsets[offsets.length - 1] + (measuredSizes.get(itemKey(item)) || estimateSize));
         }
         return { offsets, totalSize: offsets[offsets.length - 1] };
     })();

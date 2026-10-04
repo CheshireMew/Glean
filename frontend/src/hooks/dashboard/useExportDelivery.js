@@ -43,11 +43,12 @@ export function useExportDelivery(contentKind, visibleItems, selectedIds) {
     }, []);
 
     useEffect(() => {
-        void refreshPendingOperations();
-        return subscribeResource(
+        const timer = setTimeout(() => void refreshPendingOperations(), 0);
+        const unsubscribe = subscribeResource(
             API_RESOURCE.DELIVERY_OPERATIONS,
             () => void refreshPendingOperations(),
         );
+        return () => { clearTimeout(timer); unsubscribe(); };
     }, [refreshPendingOperations]);
 
     const getOrCreateStoredOperation = (storageKey, prefix, signature) => {

@@ -21,7 +21,7 @@ AI_SOURCES = (
     {"key": "waytoagi", "name": "WaytoAGI", "site_url": "https://waytoagi.feishu.cn/wiki/QPe5w5g7UisbEkkow8XcDmOpn8e", "rss_slug": None, "snapshot": True, "limit": 100, "freshness_seconds": 1800},
     {"key": "rss__v2ex-main", "name": "V2EX · 首页", "site_url": "https://www.v2ex.com/", "rss_slug": "v2ex-main", "snapshot": True, "separate_identity": True, "limit": 30, "freshness_seconds": 600},
     {"key": "rss__v2ex-tech", "name": "V2EX · 技术", "site_url": "https://www.v2ex.com/?tab=tech", "rss_slug": "v2ex-tech", "snapshot": True, "limit": 30, "freshness_seconds": 600},
-    {"key": "rss__acquired-video", "name": "Acquired", "site_url": "https://www.youtube.com/channel/UCyFqFYfTW2VoIQKylJ04Rtw", "rss_slug": "acquired-video"},
+    {"key": "rss__acquired-video", "name": "Acquired", "site_url": "https://www.youtube.com/channel/UCyFqFYfTW2VoIQKylJ04Rtw", "rss_slug": "acquired-video", "hidden": True},
     {"key": "rss__baochipianjian", "name": "保持偏见", "site_url": "https://www.xiaoyuzhoufm.com/podcast/663e3c95af1e22bb157dcee3", "rss_slug": "baochipianjian"},
 )
 

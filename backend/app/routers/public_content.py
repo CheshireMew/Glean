@@ -1,6 +1,7 @@
 from typing import Optional
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Header, Query, Depends
+from .auth import get_current_user
 from fastapi.responses import Response
 
 from shared.content_contract import CONTENT_KINDS, PUBLIC_STREAM_MAP, ContentKind, SearchKind
@@ -9,7 +10,7 @@ from ..composition import app_services
 from ..core.exceptions import ValidationError
 from ..core.response import APIEnvelope, APIResponse, ErrorEnvelope
 from ..models.responses import ContentItem, EntityData, EventDetailData, NarrativeData, PublicContentData, PublicReportsData, PublicSiteConfigData
-from ..models.responses import AIContentData, AIRefreshData
+from ..models.responses import AIContentData, AIRefreshData, PublicEntityData
 
 
 router = APIRouter(responses={400: {"model": ErrorEnvelope}, 404: {"model": ErrorEnvelope}, 422: {"model": ErrorEnvelope}, 500: {"model": ErrorEnvelope}})
@@ -31,8 +32,13 @@ def get_public_ai_content(
 
 
 @router.post("/public/ai/refresh", response_model=APIEnvelope[AIRefreshData])
-async def refresh_public_ai_content():
-    return APIResponse.success(data=await app_services.ai_refresh.refresh())
+async def refresh_public_ai_content(user: str = Depends(get_current_user)):
+    return APIResponse.success(data=await app_services.ai_refresh.refresh(trigger='admin'))
+
+
+@router.get("/public/ai/status", response_model=APIEnvelope[AIRefreshData])
+def public_ai_status():
+    return APIResponse.success(data=app_services.ai_refresh.status())
 
 
 @router.get("/public/content", response_model=APIEnvelope[PublicContentData])
@@ -113,7 +119,7 @@ def get_public_event(event_id: int):
     return APIResponse.success(data=detail)
 
 
-@router.get("/public/entities/{slug}", response_model=APIEnvelope[EntityData])
+@router.get("/public/entities/{slug}", response_model=APIEnvelope[PublicEntityData])
 def get_public_entity(
     slug: str,
     limit: int = Query(default=20, ge=1, le=100),

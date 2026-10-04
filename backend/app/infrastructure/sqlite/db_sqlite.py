@@ -128,7 +128,7 @@ class Database(DatabaseBase):
     @contextmanager
     def _migration_lock(self):
         """Serialize schema inspection, backup and migration across API processes on Windows."""
-        import msvcrt
+        import os
 
         lock_path = Path(f"{self.db_path}.migration.lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -138,12 +138,20 @@ class Database(DatabaseBase):
                 handle.write(b"0")
                 handle.flush()
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
                 yield
             finally:
                 handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                if os.name == 'nt':
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def assert_schema_current(self) -> None:
         conn = self.connect()

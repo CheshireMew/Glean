@@ -476,7 +476,7 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
             result = await app_services.ai_pipeline.test_ai_connection(ai_draft)
 
         self.assertTrue(result["ok"])
-        ai_service_class.assert_called_once_with(ai_draft["providers"], 7, 0.5, ANY)
+        ai_service_class.assert_called_once_with(ai_draft["providers"], 7, 0.5, ANY, app_services.ai_budget)
 
         with patch("backend.app.services.telegram_gateway_service.TelegramBot") as bot_class:
             bot_class.return_value.send_message = AsyncMock(return_value=True)
@@ -593,12 +593,15 @@ class ArchitectureRegressionTest(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(response.json()["success"], path)
 
     async def test_public_reports_search_and_paginate_on_the_server(self):
+        publication = repositories().publications.get_publication_by_profile('daily-briefs')
+        public_fields = {'profile_slug': 'daily-briefs', 'publication_id': publication['id']}
         repositories().daily_reports.save_report(
-            "report:alpha", "2026-08-23", "news", "Alpha protocol", "first body", 0
+            "report:alpha", "2026-08-23", "news", "Alpha protocol", "first body", 0, **public_fields
         )
         repositories().daily_reports.save_report(
-            "report:beta", "2026-08-22", "news", "Beta market", "second body", 0
+            "report:beta", "2026-08-22", "news", "Beta market", "second body", 0, **public_fields
         )
+        repositories().daily_reports.save_report('report:internal', '2026-08-24', 'news', 'Internal protocol', 'private body', 0)
         with TestClient(app) as client:
             public_config = client.get("/api/public/config")
             first = client.get(

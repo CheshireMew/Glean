@@ -1,8 +1,10 @@
 
 import os
+import math
 from pathlib import Path
 from typing import List
 from dotenv import load_dotenv
+from .revoked_credentials import is_revoked
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ENVIRONMENT = (os.getenv("GLEAN_ENV") or os.getenv("AINEWS_ENV") or os.getenv("ENV") or "development").strip().lower()
@@ -38,6 +40,11 @@ class Settings:
     JWT_SECRET_KEY: str = os.getenv('JWT_SECRET_KEY', '')
     ADMIN_USERNAME: str = os.getenv('ADMIN_USERNAME', '')
     ADMIN_PASSWORD: str = os.getenv('ADMIN_PASSWORD', '')
+    PRIVATE_ENDPOINT_HOSTS: str = os.getenv('GLEAN_PRIVATE_ENDPOINT_HOSTS', '')
+    AI_DAILY_MAX_CALLS: int = int(os.getenv('GLEAN_AI_DAILY_MAX_CALLS', '1000'))
+    AI_DAILY_MAX_COST: float = float(os.getenv('GLEAN_AI_DAILY_MAX_COST', '5'))
+    TRANSLATION_INPUT_PRICE: float = float(os.getenv('GLEAN_TRANSLATION_INPUT_PRICE', '0'))
+    TRANSLATION_OUTPUT_PRICE: float = float(os.getenv('GLEAN_TRANSLATION_OUTPUT_PRICE', '0'))
 
     # AI & 3rd Party
     TELEGRAM_BOT_TOKEN: str = os.getenv('TELEGRAM_BOT_TOKEN', '')
@@ -72,6 +79,14 @@ class Settings:
         if self.ENV != "production":
             return
         problems = []
+        if self.JWT_SECRET_KEY and is_revoked('JWT_SECRET_KEY', self.JWT_SECRET_KEY):
+            problems.append('签名密钥曾进入仓库历史，请重新生成或留空')
+        if self.ADMIN_PASSWORD and is_revoked('ADMIN_PASSWORD', self.ADMIN_PASSWORD):
+            problems.append('初始化密码曾进入仓库历史，请使用新密码')
+        if hasattr(os, 'geteuid') and os.geteuid() == 0:
+            problems.append('生产服务必须使用专用普通账号，不能使用 root')
+        if self.AI_DAILY_MAX_CALLS < 1 or not math.isfinite(self.AI_DAILY_MAX_COST) or self.AI_DAILY_MAX_COST <= 0:
+            problems.append('AI 每日调用及费用上限必须大于零')
         placeholder_markers = ("change-me", "changeme", "replace", "placeholder", "example", "your_")
 
         def is_placeholder(value: str) -> bool:

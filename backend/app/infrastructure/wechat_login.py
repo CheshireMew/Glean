@@ -52,10 +52,10 @@ class WechatBrowserLogin:
         try:
             with sync_playwright() as playwright:
                 try:
-                    browser = playwright.chromium.launch(headless=True)
+                    browser = playwright.chromium.launch(headless=True, chromium_sandbox=True)
                 except PlaywrightError:
                     # Windows installations commonly already have Edge.
-                    browser = playwright.chromium.launch(headless=True, channel='msedge')
+                    browser = playwright.chromium.launch(headless=True, channel='msedge', chromium_sandbox=True)
                 try:
                     context = browser.new_context(locale='zh-CN', viewport={'width': 1100, 'height': 850})
                     page = context.new_page()

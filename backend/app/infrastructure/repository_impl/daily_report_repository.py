@@ -97,6 +97,12 @@ class DailyReportRepository(BaseRepository):
             where_parts.append("publication_id = ?")
             params.append(publication_id)
         if public_only:
+            where_parts.append("""EXISTS (
+                SELECT 1 FROM profile_publications p
+                WHERE p.id = daily_reports.publication_id
+                  AND p.profile_slug = daily_reports.profile_slug
+                  AND p.enabled = 1 AND p.is_public = 1
+            )""")
             where_parts.append("""(draft_id IS NULL OR EXISTS (
                 SELECT 1 FROM publication_drafts d WHERE d.id = daily_reports.draft_id AND d.status = 'published'
             ))""")

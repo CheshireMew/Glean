@@ -1,0 +1,22 @@
+[Unit]
+Description=Glean API
+After=network.target
+
+[Service]
+User=glean
+Group=glean
+WorkingDirectory=/var/www/glean
+Environment=GLEAN_ENV=production
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/glean/browsers
+EnvironmentFile=/etc/glean/production.env
+ExecStart=/var/www/glean/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1 --limit-concurrency 128 --timeout-keep-alive 5
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/www/glean/data /var/lib/glean
+
+[Install]
+WantedBy=multi-user.target

@@ -65,6 +65,7 @@ class WebsitePublicationTest(unittest.IsolatedAsyncioTestCase):
         self.services = AppServices()
         public = self.public()
         self.assertEqual(public["total"], 1)
+        self.assertEqual(self.services.public_content.get_public_reports('article', 20, 0)['total'], 1)
         self.assertNotEqual(public["revision"], before["revision"])
         self.assertEqual(public["items"][0]["source_url"], "https://example.test/model")
         self.assertEqual(self.services.public_content.search_public_content("开源模型", "article", 20, 0)["total"], 1)
@@ -74,6 +75,7 @@ class WebsitePublicationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repositories().daily_reports.list_reports("article", 20, 0)["total"], 1)
         self.services.publications.update_publication(self.publication["id"], {"is_public": False})
         self.assertEqual(self.public()["total"], 0)
+        self.assertEqual(self.services.public_content.get_public_reports('article', 20, 0)['total'], 0)
         with self.assertRaises(NotFoundError):
             self.services.event_intelligence.get_detail(self.entry["event_id"], public_only=True)
 
@@ -83,6 +85,7 @@ class WebsitePublicationTest(unittest.IsolatedAsyncioTestCase):
         draft = self.draft()
         with self.assertRaises(ValidationError):
             await self.services.publication_workflow.publish_draft(draft["id"], website_only=True)
+
         self.select()
         self.services.publications.update_publication(self.publication["id"], {"is_public": False})
         with self.assertRaises(ValidationError):
@@ -91,6 +94,29 @@ class WebsitePublicationTest(unittest.IsolatedAsyncioTestCase):
         repositories().editorial_workbench.update_draft(draft["id"], status="publishing")
         with self.assertRaises(ConflictError):
             await self.services.publication_workflow.publish_draft(draft["id"], website_only=True)
+
+
+    async def test_sent_delivery_cannot_bypass_private_or_disabled_publication(self):
+        self.select()
+        draft = self.draft()
+        await self.services.publication_workflow.publish_draft(draft['id'], website_only=True)
+        repositories().review.execute("UPDATE review_entries SET delivery_status='sent' WHERE id=?", (self.entry['id'],))
+        self.assertEqual(self.public()['total'], 1)
+        for values in ({'is_public': False}, {'is_public': True, 'enabled': False}):
+            self.services.publications.update_publication(self.publication['id'], values)
+            self.assertEqual(self.public()['total'], 0)
+            self.assertEqual(self.services.public_content.get_public_reports('article', 20, 0)['total'], 0)
+            self.assertEqual(self.services.public_content.search_public_content('开源模型', 'article', 20, 0)['total'], 0)
+            self.assertNotIn('开源模型发布', self.services.public_content.build_public_rss('article', 20))
+            with self.assertRaises(NotFoundError):
+                self.services.event_intelligence.get_detail(self.entry['event_id'], public_only=True)
+
+    async def test_internal_delivery_without_website_report_is_private(self):
+        self.select()
+        repositories().review.execute("UPDATE review_entries SET delivery_status='sent' WHERE id=?", (self.entry['id'],))
+        self.assertEqual(self.public()['total'], 0)
+        with self.assertRaises(NotFoundError):
+            self.services.event_intelligence.get_detail(self.entry['event_id'], public_only=True)
 
     async def test_failed_website_write_rolls_back_and_can_retry(self):
         self.select()

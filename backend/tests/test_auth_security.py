@@ -191,7 +191,8 @@ class AuthSecurityTest(unittest.TestCase):
         from backend.app.routers.auth import get_current_user
         def protected(dependant):
             return dependant.call is get_current_user or any(protected(dep) for dep in dependant.dependencies)
-        for route in app.routes:
+        from fastapi.routing import iter_route_contexts
+        for route in iter_route_contexts(app.routes):
             if not route.path.startswith("/api/") or route.path.startswith(("/api/public/", "/api/analyst/")) or route.path == "/api/login":
                 continue
             self.assertTrue(protected(route.dependant), route.path)

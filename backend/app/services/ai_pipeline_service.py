@@ -30,6 +30,7 @@ class AIPipelineService:
         review_admin_repository,
         ai_quality_repository,
         transaction,
+        budget=None,
     ):
         self._ai_provider_settings = ai_provider_settings
         self._automation_settings = automation_settings
@@ -39,6 +40,7 @@ class AIPipelineService:
         self._review_admin_repository = review_admin_repository
         self._ai_quality_repository = ai_quality_repository
         self._transaction = transaction
+        self._budget = budget
 
     def _build_service(self, phase: str, config: Dict | None = None) -> EditorialAIService:
         config = config if config is not None else self._ai_provider_settings.get_config(include_secrets=True)
@@ -51,6 +53,7 @@ class AIPipelineService:
             config[concurrency_key],
             config["throttle_seconds"],
             self._record_ai_invocation,
+            self._budget,
         )
 
     def _record_ai_invocation(self, event: Dict) -> None:

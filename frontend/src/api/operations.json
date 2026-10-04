@@ -8,7 +8,7 @@
   "addWechatSource": { "method": "post", "path": "/wechat/sources", "invalidates": ["scraper-runtime"] },
   "updateWechatSource": { "method": "put", "path": "/wechat/sources/{source_id}", "invalidates": ["scraper-runtime"] },
   "getPublicAIContent": { "method": "get", "path": "/public/ai/content" },
-  "refreshPublicAIContent": { "method": "post", "path": "/public/ai/refresh" },
+  "refreshPublicAIContent": { "method": "get", "path": "/public/ai/status" },
   "login": { "method": "post", "path": "/login" },
   "logout": { "method": "post", "path": "/logout" },
   "authSession": { "method": "get", "path": "/session" },

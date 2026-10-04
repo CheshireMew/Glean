@@ -38,18 +38,18 @@ jobs:
       - name: Install release verification browser
         run: python -m playwright install chromium
 
-      - name: Verify backend
-        run: |
-          python -m compileall -q backend
-          python -m ruff check backend shared --select F
-          python -m unittest discover -s backend/tests -v
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+
+      - name: Verify backend
+        run: |
+          python -m compileall -q backend
+          python -m ruff check backend shared scripts/windows --select F
+          python -m unittest discover -s backend/tests -v
 
       - name: Install frontend dependencies
         working-directory: frontend

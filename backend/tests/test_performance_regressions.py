@@ -126,6 +126,12 @@ class PerformanceRegressionTest(unittest.TestCase):
                 """,
                 rows,
             )
+            connection.execute("UPDATE profile_publications SET enabled=1, is_public=1 WHERE profile_slug='daily-briefs'")
+            publication_id = connection.execute("SELECT id FROM profile_publications WHERE profile_slug='daily-briefs'").fetchone()[0]
+            connection.execute("INSERT INTO daily_reports(publication_key, date, type, title, content, news_count, profile_slug, publication_id) VALUES ('performance-public', ?, 'news', '日报', '正文', 30000, 'daily-briefs', ?)", (current_time[:10], publication_id))
+            report_id = connection.execute('SELECT id FROM daily_reports').fetchone()[0]
+            connection.execute("""INSERT INTO daily_report_items(report_id, review_entry_id, position, section, ranking_score, title, source_url, source_site, content_type)
+                                  SELECT ?, id, id, '其他', 0, title, source_url, source_site, content_type FROM review_entries""", (report_id,))
             connection.commit()
             repository = ReviewPublicRepository(connection)
             arguments = ("OpenAI", "news", {"news": "daily-briefs", "article": "deep-reads"})

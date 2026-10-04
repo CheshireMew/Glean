@@ -1,4 +1,5 @@
 import httpx
+from ..core.outbound_http import safe_http_client
 import logging
 
 from shared.content_contract import (
@@ -36,7 +37,7 @@ class TelegramBot:
         }
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with safe_http_client('integration') as client:
                 response = await client.post(url, json=payload, timeout=10.0)
                 if response.status_code != 200:
                     error = f"Telegram HTTP {response.status_code}: {response.text[:500]}"
@@ -67,7 +68,7 @@ class TelegramBot:
             
         url = f"{self.base_url}/getMe"
         try:
-            async with httpx.AsyncClient() as client:
+            async with safe_http_client('integration') as client:
                 response = await client.get(url, timeout=10.0)
                 return response.json()
         except Exception as e:

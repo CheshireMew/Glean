@@ -36,20 +36,22 @@ class AIRefreshTest(unittest.IsolatedAsyncioTestCase):
     def commands(self):
         return [dict(row) for row in repositories().scraper_commands.execute("SELECT * FROM scraper_runtime_commands").fetchall()]
 
-    async def test_public_request_refreshes_with_auto_off_and_coalesces_across_instances(self):
+    async def test_public_reads_status_without_enqueuing_and_refresh_requires_admin(self):
         self.assertFalse(self.services.automation_settings.get_runtime()["enabled"])
         self.services.scraper_runtime_state.update_scraper_config("lobsters", "manual", None)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             await client.get("/api/public/ai/content")
             self.assertEqual(self.commands(), [])
             response = await client.post("/api/public/ai/refresh")
-            self.assertEqual(response.status_code, 200)
-            self.assertTrue(response.json()["data"]["updating"])
+            self.assertEqual(response.status_code, 401)
+            status = await client.get('/api/public/ai/status')
+            self.assertEqual(status.status_code, 200)
+            self.assertEqual(self.commands(), [])
         await AppServices().ai_refresh.refresh()
         rows = self.commands()
         self.assertEqual({row["scraper_name"] for row in rows}, {source["key"] for source in PUBLIC_AI_SOURCES})
         self.assertEqual(len(rows), len(PUBLIC_AI_SOURCES))
-        self.assertTrue(all('ai-view' in row['payload'] for row in rows))
+        self.assertTrue(all('admin' in row['payload'] for row in rows))
         self.assertEqual(json.loads(next(row['payload'] for row in rows if row['scraper_name'] == 'hacker_news'))['items'], 30)
 
     async def test_completed_and_failed_attempts_are_cached_even_after_restart(self):

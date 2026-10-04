@@ -93,6 +93,14 @@ class IntelligenceCompletionTest(unittest.IsolatedAsyncioTestCase):
                 ),
             ).lastrowid
             conn.commit()
+            from backend.app.infrastructure.repository_impl.daily_report_repository import DailyReportRepository
+            publication = conn.execute("SELECT id FROM profile_publications WHERE profile_slug='daily-briefs'").fetchone()
+            reports = DailyReportRepository(conn)
+            report_id = reports.save_report('completion-public-evidence', published[:10], 'news', '公开事件', '事件正文', 1,
+                                            profile_slug='daily-briefs', publication_id=publication['id'])
+            entry = dict(conn.execute('SELECT * FROM review_entries WHERE id=?', (review_id,)).fetchone())
+            reports.save_report_items(report_id, [entry])
+            conn.commit()
             return {"news": int(news_id), "event": int(event_id), "review": int(review_id)}
         finally:
             conn.close()
@@ -297,11 +305,18 @@ class IntelligenceCompletionTest(unittest.IsolatedAsyncioTestCase):
                 (news_id, published, published, published),
             ).lastrowid
             conn.execute("INSERT INTO event_sources(event_id, news_id, similarity, is_primary) VALUES (?, ?, 1, 1)", (event_id, news_id))
-            conn.execute(
+            review_id = conn.execute(
                 """INSERT INTO review_entries(title, content, source_site, source_url, published_at, scraped_at, archived_at, queued_at, content_type, source_item_id, event_id, profile_slug, review_status, review_summary, review_reason, review_score, review_category, review_tags, delivery_status)
                 VALUES ('关联事件', '后续正文', 'Official Wire', 'https://example.test/related', ?, ?, ?, ?, 'news', ?, ?, 'daily-briefs', 'selected', '摘要', '重要', 8, '监管', '[]', 'sent')""",
                 (published, published, published, published, news_id, event_id),
-            )
+            ).lastrowid
+            conn.commit()
+            from backend.app.infrastructure.repository_impl.daily_report_repository import DailyReportRepository
+            publication = conn.execute("SELECT id FROM profile_publications WHERE profile_slug='daily-briefs'").fetchone()
+            reports = DailyReportRepository(conn)
+            report_id = reports.save_report('completion-related-public', published[:10], 'news', '关联事件', '后续正文', 1,
+                                            profile_slug='daily-briefs', publication_id=publication['id'])
+            reports.save_report_items(report_id, [dict(conn.execute('SELECT * FROM review_entries WHERE id=?', (review_id,)).fetchone())])
             conn.commit()
             return int(event_id)
         finally:

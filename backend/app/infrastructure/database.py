@@ -10,7 +10,13 @@ database = Database()
 
 
 def init_database() -> None:
+    from ..core.config import settings
+    from .data_permissions import protect_database
+    if settings.ENV == 'production':
+        protect_database(database.db_path)
     database.init_db()
+    if settings.ENV == 'production':
+        protect_database(database.db_path)
 
 
 def assert_database_ready() -> None:

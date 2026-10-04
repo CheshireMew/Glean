@@ -1,13 +1,14 @@
 # Glean API 概览
 
-API 默认运行在 `http://localhost:8000`，业务路由统一使用 `/api` 前缀。后台接口使用登录获得的 Bearer Token；公开接口不需要登录。
+API 默认运行在 `http://localhost:8000`，业务路由统一使用 `/api` 前缀。后台接口使用登录会话，浏览器使用 HttpOnly Cookie，CLI/API 客户端仍可使用 Bearer Token；公开读取接口不需要登录。
 
-账户接口：`POST /api/login` 接收表单 `username` / `password`；`GET /api/session` 验证当前登录并返回用户名；`POST /api/logout` 撤销当前登录；`POST /api/system/credentials` 验证当前密码并修改账户，成功后全部旧登录失效。除登录外都要求 Bearer Token。登录凭证有效期为 12 小时，且必须存在对应的服务器会话；退出后的凭证不能重放。登录和修改账户都有持久化尝试限制，超过限制返回 `429` 和 `Retry-After` 秒数。密码重置仅有本机命令，不提供匿名网络重置接口。
+账户接口：`POST /api/login` 接收 URL 编码表单 `username` / `password`，请求体最多 4 KiB，拒绝重复字段、未知字段及过多字段。普通客户端获得 Bearer Token；浏览器带 `X-Glean-Session: browser` 时只设置会话 Cookie，并返回 `csrf_token`，不把登录 Token 返回给 JavaScript。`GET /api/session` 验证登录并返回用户名及当前请求验证令牌；Cookie 会话的写操作必须带 `X-CSRF-Token`。`POST /api/logout` 撤销当前登录；`POST /api/system/credentials` 验证当前密码并修改账户，成功后全部旧登录失效。凭证有效期 12 小时，必须有对应服务器会话，退出后不能重放。登录和修改账户都有持久化尝试限制，超过限制返回 `429` 和 `Retry-After`。密码重置仅有本机命令。生产 Cookie 使用 Secure、HttpOnly、SameSite=Strict，前端和 API 必须同源 HTTPS。
 
 ## 公开接口
 
 - `GET /api/public/ai/content?source=lobsters&limit=20&offset=0`：读取已入库的 AI 资讯与译文，不直接请求外站。
-- `POST /api/public/ai/refresh`：页面打开或停留时检查八个固定来源是否需要更新，返回 `updating`、来源状态及失败原因。无需传来源 URL 或模型参数；同一来源默认 5 分钟内复用结果（V2EX 10 分钟、WaytoAGI 30 分钟），多页面共用任务，尊重网站冷却和来源停用状态。Worker 负责实际采集和翻译，不依赖旧定时采集总开关；服务未运行时返回明确提示，旧内容仍可读取。
+- `GET /api/public/ai/status`：只读更新状态，返回 `updating`、各来源状态及简化错误提示，不创建采集任务。定时采集由 worker 执行，尊重自动化总开关、管理员设置的频率、来源停用和网站冷却。
+- `POST /api/public/ai/refresh`：需要管理员登录，检查来源新鲜度并排队更新。匿名请求返回 401，重复请求复用已有任务。浏览器通常通过来源管理中的采集操作手动更新。
 - `GET /api/public/content?stream=briefs|longform&limit=20&cursor=...`
 - `GET /api/public/reports?kind=news|article&limit=20&offset=0`
 - `GET /api/public/search?query=关键词&kind=news|article|all`

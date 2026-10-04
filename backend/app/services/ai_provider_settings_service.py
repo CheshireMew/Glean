@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from shared.content_contract import integration_key
 from ..core.coercion import non_negative_float, positive_int
 from ..core.exceptions import ValidationError
+from ..core.outbound_http import validate_url
 
 
 class AIProviderSettingsService:
@@ -52,6 +53,7 @@ class AIProviderSettingsService:
             parsed_url = urlparse(str(provider["base_url"]).strip())
             if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
                 raise ValidationError(f"AI 端点 {name} 的地址必须是有效的 HTTP(S) URL")
+            validate_url(provider['base_url'], 'integration')
             provider["name"] = name
             provider["base_url"] = str(provider["base_url"]).strip().rstrip("/")
             provider["model"] = str(provider["model"]).strip()

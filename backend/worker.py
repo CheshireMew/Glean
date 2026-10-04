@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from logging import getLogger
+import signal
+import sys
 
 from backend.app.composition import app_services
 from backend.app.core.config import settings
@@ -42,4 +44,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if sys.platform == "win32":
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

@@ -38,7 +38,7 @@ def source_http(handler):
     original_client = httpx.AsyncClient
     with patch(
         "backend.app.infrastructure.scraper_impl.source_transport.httpx.AsyncClient",
-        side_effect=lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs),
+        side_effect=lambda **kwargs: original_client(**{**kwargs, 'transport': httpx.MockTransport(handler)}),
     ):
         yield
 

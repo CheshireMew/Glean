@@ -113,7 +113,7 @@ AI 审核分批认领 `review_entries` 中 `review_status = pending` 的事件�
 1. 从 `review_entries` 读取最近 24 小时内已选入的内容
 2. 按分数、多来源印证、栏目上限和来源上限编排
 3. 发送到 Telegram
-4. 发送成功后写入 `daily_reports` 与 `daily_report_items`，并将对应内容标记为公开可见
+4. 发送成功后写入 `daily_reports` 与 `daily_report_items`，并将对应内容标记为已投递。网站公开展示还要求存在公开且启用频道的正式发布记录，内部投递不会自动公开内容。
 
 每次成功发布使用唯一 `publication_key`，日报条目同时冻结标题、链接、来源、摘要、补充内容与引用；后来删除或修改审核条目不会改变历史日报。因此，`daily_reports` 是不可变的发布历史，不是实时发送队列。
 

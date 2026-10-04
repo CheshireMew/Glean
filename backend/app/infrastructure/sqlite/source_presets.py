@@ -17,7 +17,6 @@ CURATED_RSS_SOURCES = (
     ("v2ex-main", "V2EX · 首页", "https://v2ex.com/index.xml", "https://www.v2ex.com/", "aggregator", 0),
     ("v2ex-tech", "V2EX · 技术", "https://www.v2ex.com/feed/tab/tech.xml", "https://www.v2ex.com/?tab=tech", "aggregator", 0),
     ("hn-chinese-digest", "Hacker News 中文每日摘要", "https://www.supertechfans.com/cn/index.xml", "https://www.supertechfans.com/cn/", "aggregator", 0),
-    ("acquired-video", "Acquired", "https://www.youtube.com/feeds/videos.xml?channel_id=UCyFqFYfTW2VoIQKylJ04Rtw", "https://www.youtube.com/channel/UCyFqFYfTW2VoIQKylJ04Rtw", "primary", 0),
     ("baochipianjian", "保持偏见", "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/663e3c95af1e22bb157dcee3", "https://www.xiaoyuzhoufm.com/podcast/663e3c95af1e22bb157dcee3", "primary", 0),
 )
 
@@ -38,9 +37,10 @@ def seed_curated_rss_sources(cursor: sqlite3.Cursor) -> None:
     _seed_rss_sources(cursor, CURATED_RSS_SOURCES)
     excluded_feeds = {_feed_identity(url) for url in (
         "https://www.qbitai.com/feed", "https://www.tmtpost.com/feed",
+        "https://www.youtube.com/feeds/videos.xml?channel_id=UCyFqFYfTW2VoIQKylJ04Rtw",
     )}
     for source_id, slug, feed_url in cursor.execute("SELECT id, slug, feed_url FROM rss_sources").fetchall():
-        if slug in {"qbitai", "tmtpost"} or _feed_identity(feed_url) in excluded_feeds:
+        if slug in {"qbitai", "tmtpost", "acquired-video"} or _feed_identity(feed_url) in excluded_feeds:
             cursor.execute("UPDATE rss_sources SET enabled=0, updated_at=CURRENT_TIMESTAMP WHERE id=? AND enabled!=0", (source_id,))
 
 

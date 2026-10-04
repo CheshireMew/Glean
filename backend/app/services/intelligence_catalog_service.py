@@ -32,7 +32,11 @@ class IntelligenceCatalogService:
         entity = self._repository().get_entity_by_slug(slug)
         if not entity:
             raise NotFoundError("实体不存在")
-        return {**entity, "events": self._repository().list_entity_events(entity["id"], True, limit, offset)}
+        events = self._repository().list_entity_events(entity["id"], True, limit, offset)
+        if not events["total"]:
+            raise NotFoundError("实体不存在")
+        fields = ("id", "entity_type", "slug", "name", "symbol", "description")
+        return {**{key: entity.get(key) for key in fields}, "events": events}
 
     def save_entity(self, values: Dict, entity_id: int | None = None) -> Dict:
         normalized = {

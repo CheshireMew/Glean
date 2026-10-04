@@ -9,6 +9,9 @@ import httpx
 
 from ..core.exceptions import ValidationError
 from ..domain.ai_sources import AI_SOURCES, translation_fields
+from ..core.outbound_http import safe_http_client
+from .ai_runtime import AIEndpoint
+from ..core.config import settings
 
 MODEL = "deepseek-flash"
 BATCH_SIZE = 10
@@ -22,11 +25,12 @@ SYSTEM_PROMPT = (
 class AITranslationService:
     """Translate collected text in batches; public reads never invoke a model."""
 
-    def __init__(self, repository, rss_repository, leases, client_factory=httpx.AsyncClient):
+    def __init__(self, repository, rss_repository, leases, client_factory=safe_http_client, budget=None):
         self._repository = repository
         self._rss_repository = rss_repository
         self._leases = leases
         self._client_factory = client_factory
+        self.budget = budget
 
     async def translate_pending(self, source: str | None = None, limit: int = 100) -> dict:
         if source and source not in {item["key"] for item in AI_SOURCES}:
@@ -62,16 +66,26 @@ class AITranslationService:
                                  "item_count": len(batch), "started_at": started_at}
                         result["batches"] += 1
                         try:
+                            max_tokens = min(4096, 128 + sum(128 + len(item.get('excerpt', '')) for item in request_items))
+                            user_text = json.dumps({'items': request_items}, ensure_ascii=False, separators=(',', ':'))
+                            endpoint = AIEndpoint('translation', api_key, 'https://api.deepseek.com', MODEL,
+                                                  settings.TRANSLATION_INPUT_PRICE, settings.TRANSLATION_OUTPUT_PRICE)
+                            if settings.ENV == 'production' and self.budget is None:
+                                raise ValidationError('生产翻译必须配置共享费用限制')
+                            reservation = self.budget.reserve(endpoint, SYSTEM_PROMPT, user_text, max_tokens) if self.budget else None
                             response = await client.post("https://api.deepseek.com/chat/completions", json={
                                 "model": MODEL, "thinking": {"type": "disabled"},
                                 "temperature": 0, "response_format": {"type": "json_object"},
-                                "max_tokens": min(4096, 128 + sum(128 + len(item.get("excerpt", "")) for item in request_items)),
+                                "max_tokens": max_tokens,
                                 "messages": [{"role": "system", "content": SYSTEM_PROMPT},
-                                             {"role": "user", "content": json.dumps({"items": request_items}, ensure_ascii=False, separators=(",", ":"))}],
+                                             {"role": "user", "content": user_text}],
                             })
                             response.raise_for_status()
                             data = response.json()
                             usage = data.get("usage") or {}
+                            if usage and self.budget:
+                                self.budget.settle(reservation, (int(usage.get('prompt_tokens') or 0) * settings.TRANSLATION_INPUT_PRICE
+                                                      + int(usage.get('completion_tokens') or 0) * settings.TRANSLATION_OUTPUT_PRICE) / 1_000_000)
                             for target, origin in (("input_tokens", "prompt_tokens"), ("output_tokens", "completion_tokens")):
                                 event[target] = int(usage.get(origin) or 0)
                                 result[target] += event[target]

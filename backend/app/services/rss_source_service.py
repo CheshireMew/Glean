@@ -176,6 +176,8 @@ class RssSourceService:
 
     @staticmethod
     def _normalize_url(value: str) -> str:
+        from ..core.outbound_http import validate_url
+        validate_url(value)
         parsed = urlparse(value.strip())
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValidationError("URL 无效")

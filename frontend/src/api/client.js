@@ -4,17 +4,18 @@
 
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
-import { clearAuthToken, getAuthToken } from '../auth/session';
+import { clearAuthToken, getCsrfToken } from '../auth/session';
 
 const client = axios.create({
     baseURL: `${API_BASE_URL}/api`,
     timeout: 30000,
+    withCredentials: true,
 });
 
 client.interceptors.request.use((config) => {
-    const token = getAuthToken();
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    const token = getCsrfToken();
+    if (token && !['get', 'head', 'options'].includes((config.method || 'get').toLowerCase())) {
+        config.headers['X-CSRF-Token'] = token;
     }
     return config;
 });
@@ -44,7 +45,7 @@ client.interceptors.response.use(
     },
     (error) => {
         if (error.response) {
-            if (error.response.status === 401) {
+            if (error.response.status === 401 && error.config?.url !== '/session') {
                 clearAuthToken();
                 if (!window.location.pathname.includes('/login')) {
                     window.location.href = '/login';

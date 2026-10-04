@@ -5,6 +5,7 @@ import html
 import json
 import re
 import smtplib
+import ssl
 import uuid
 from email.message import EmailMessage
 
@@ -16,7 +17,10 @@ from shared.content_contract import (
     DELIVERY_PART_STATUS_UNKNOWN,
 )
 
-from ..core.exceptions import NotFoundError
+from ..core.exceptions import NotFoundError, ValidationError
+from ..core.outbound_http import safe_http_client, validate_url
+from ..core.outbound_smtp import PinnedSMTP, PinnedSMTPSSL
+from ..core.config import settings
 
 
 def _plain_text(value: str) -> str:
@@ -105,7 +109,7 @@ class PublicationChannelGateway:
             if channel_type == "email":
                 return await self._send_email(config, text)
             return self._failed(f"不支持的投递渠道类型：{channel_type}")
-        except (NotFoundError, ValueError, KeyError) as exc:
+        except (NotFoundError, ValidationError, ValueError, KeyError) as exc:
             return self._failed(str(exc))
 
     async def send_json_result(self, channel_slug: str, payload: dict) -> dict:
@@ -118,7 +122,7 @@ class PublicationChannelGateway:
             if not url:
                 return self._failed("Webhook URL 未配置")
             headers = {str(key): str(value) for key, value in (config.get("headers") or {}).items()}
-            async with httpx.AsyncClient(timeout=float(config.get("timeout_seconds") or 15)) as client:
+            async with safe_http_client('integration', timeout=float(config.get("timeout_seconds") or 15)) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 if response.status_code < 200 or response.status_code >= 300:
                     return self._failed(f"Webhook HTTP {response.status_code}: {response.text[:500]}")
@@ -129,7 +133,7 @@ class PublicationChannelGateway:
                 }
         except httpx.RequestError as exc:
             return self._unknown(f"Webhook 网络结果不确定：{exc}")
-        except (NotFoundError, ValueError, KeyError) as exc:
+        except (NotFoundError, ValidationError, ValueError, KeyError) as exc:
             return self._failed(str(exc))
 
     async def test_channel(self, channel_id: int) -> dict:
@@ -163,7 +167,7 @@ class PublicationChannelGateway:
             }
         headers = {str(key): str(value) for key, value in (config.get("headers") or {}).items()}
         try:
-            async with httpx.AsyncClient(timeout=float(config.get("timeout_seconds") or 15)) as client:
+            async with safe_http_client('integration', timeout=float(config.get("timeout_seconds") or 15)) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 if response.status_code < 200 or response.status_code >= 300:
                     return self._failed(f"Webhook HTTP {response.status_code}: {response.text[:500]}")
@@ -197,11 +201,18 @@ class PublicationChannelGateway:
             message.set_content(_plain_text(text))
             message.add_alternative(text.replace("\n", "<br>"), subtype="html")
             host = str(config["host"])
+            validate_url('https://' + host, 'integration')
+            if settings.ENV == 'production':
+                if not config.get('use_ssl') and not config.get('use_tls'):
+                    raise ValueError('生产环境邮件渠道必须使用 TLS 或 SSL')
             port = int(config.get("port") or (465 if config.get("use_ssl") else 587))
             smtp_class = smtplib.SMTP_SSL if config.get("use_ssl") else smtplib.SMTP
-            with smtp_class(host, port, timeout=float(config.get("timeout_seconds") or 20)) as smtp:
+            if settings.ENV == 'production':
+                smtp_class = PinnedSMTPSSL if config.get('use_ssl') else PinnedSMTP
+            options = {'context': ssl.create_default_context()} if config.get('use_ssl') else {}
+            with smtp_class(host, port, timeout=float(config.get("timeout_seconds") or 20), **options) as smtp:
                 if config.get("use_tls") and not config.get("use_ssl"):
-                    smtp.starttls()
+                    smtp.starttls(context=ssl.create_default_context())
                 if config.get("username"):
                     smtp.login(str(config["username"]), str(config.get("password") or ""))
                 smtp.send_message(message)
@@ -210,7 +221,7 @@ class PublicationChannelGateway:
         try:
             remote_id = await asyncio.to_thread(send_sync)
             return {"status": DELIVERY_PART_STATUS_SENT, "error": None, "remote_message_id": remote_id}
-        except (smtplib.SMTPAuthenticationError, smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused) as exc:
+        except (ValidationError, ValueError, smtplib.SMTPAuthenticationError, smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused) as exc:
             return self._failed(f"邮件服务器拒绝发送：{exc}")
         except (OSError, smtplib.SMTPException) as exc:
             return self._unknown(f"邮件发送结果不确定：{exc}")

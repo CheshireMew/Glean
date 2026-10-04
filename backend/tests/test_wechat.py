@@ -43,7 +43,7 @@ def page_payload(items):
 def wechat_http(handler):
     client = httpx.AsyncClient
     with patch('backend.app.infrastructure.wechat_gateway.httpx.AsyncClient',
-               side_effect=lambda **kwargs: client(transport=httpx.MockTransport(handler), **kwargs)):
+               side_effect=lambda **kwargs: client(**{**kwargs, 'transport': httpx.MockTransport(handler)})):
         yield
 
 

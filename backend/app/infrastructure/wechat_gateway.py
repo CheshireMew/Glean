@@ -8,6 +8,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from ..core.exceptions import BusinessError
+from ..core.outbound_http import safe_http_client
 
 
 def plain_text(value):
@@ -54,7 +55,7 @@ class WechatGateway:
         headers = {'Referer': 'https://mp.weixin.qq.com/',
                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36'}
         try:
-            async with httpx.AsyncClient(cookies=cookies, headers=headers, timeout=25, follow_redirects=False) as client:
+            async with safe_http_client('integration', cookies=cookies, headers=headers, timeout=25) as client:
                 response = await client.get('https://mp.weixin.qq.com/cgi-bin/' + path,
                     params={**params, 'token': session['token'], 'lang': 'zh_CN', 'f': 'json', 'ajax': '1'})
             if response.status_code in {301, 302, 303, 401, 403}:

@@ -4,6 +4,9 @@ import asyncio
 import random
 from typing import Optional, TYPE_CHECKING
 from urllib.parse import urljoin
+from urllib.parse import urlsplit
+from ...core.config import settings
+from ...core.outbound_http import safe_http_client, validate_url
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
@@ -19,7 +22,8 @@ async def init_browser(scraper, headless: bool = True):
     scraper._source_requests = {}
     scraper._source_access = source_access
     scraper.playwright = await async_playwright().start()
-    scraper.browser = await scraper.playwright.chromium.launch(headless=headless)
+    scraper.browser = await scraper.playwright.chromium.launch(headless=headless, chromium_sandbox=True)
+    scraper._safe_http = safe_http_client(timeout=30) if settings.ENV == 'production' else None
     scraper.browser_context = await scraper.browser.new_context(
         viewport={"width": 1440, "height": 900}, locale="zh-CN", service_workers="block",
     )
@@ -40,6 +44,10 @@ async def init_browser(scraper, headless: bool = True):
 
     await scraper.browser_context.route("**/*", handle_route)
     scraper.browser_context.on("response", handle_response)
+    if settings.ENV == 'production':
+        async def close_socket(websocket):
+            await websocket.close()
+        await scraper.browser_context.route_web_socket('**/*', close_socket)
     scraper.page = await scraper.browser_context.new_page()
     scraper.page.set_default_timeout(30000)
     scraper.page.set_default_navigation_timeout(60000)
@@ -65,21 +73,32 @@ async def pace_browser_request(scraper, route):
             scraper._source_access.assert_allowed(budget_url)
         if scraper._source_access_error:
             await route.abort()
-        elif request.resource_type in {"document", "xhr", "fetch"}:
+        elif request.resource_type in {"document", "xhr", "fetch"} or settings.ENV == 'production':
             # Playwright routing does not re-intercept native HTTP redirects.
             # Fetch one hop at a time so every destination uses the same gate.
             url = request.url
             method = request.method
+            headers_for_request = {k: v for k, v in (await request.all_headers()).items()
+                                   if k.lower() not in {'host', 'content-length'}} if settings.ENV == 'production' else {}
+            body = request.post_data_buffer if settings.ENV == 'production' else None
             for hop in range(6):
-                response = await route.fetch(url=url, method=method, max_redirects=0, max_retries=0, timeout=30000)
+                response = (await scraper._safe_http.request(method, url, headers=headers_for_request, content=body)
+                            if settings.ENV == 'production' else
+                            await route.fetch(url=url, method=method, max_redirects=0, max_retries=0, timeout=30000))
                 try:
                     headers = response.headers
-                    scraper._source_access.inspect(request_budget_url(scraper, url), response.status, headers,
-                        await response.text() if request.resource_type == "document" or "text/html" in headers.get("content-type", "") else "")
-                    if response.status in (301, 302, 303, 307, 308) and headers.get("location"):
+                    status = response.status_code if settings.ENV == 'production' else response.status
+                    text = response.text if settings.ENV == 'production' else await response.text()
+                    scraper._source_access.inspect(request_budget_url(scraper, url), status, headers, text)
+                    if status in (301, 302, 303, 307, 308) and headers.get("location"):
                         if hop == 5:
                             raise SourceAccessError("页面重定向次数过多，已停止")
-                        url = urljoin(url, headers["location"])
+                        destination = urljoin(url, headers["location"])
+                        validate_url(destination)
+                        if urlsplit(url).netloc != urlsplit(destination).netloc:
+                            headers_for_request = {k: v for k, v in headers_for_request.items()
+                                                   if k.lower() not in {'cookie', 'authorization'}}
+                        url = destination
                         scraper._source_access.assert_allowed(request_budget_url(scraper, url))
                         if request.resource_type == "document" and request.frame == request.frame.page.main_frame:
                             # Re-navigate explicitly to preserve the final page URL
@@ -87,14 +106,21 @@ async def pace_browser_request(scraper, route):
                             scraper._source_redirects[request.frame.page] = url
                             await route.fulfill(status=200, content_type="text/html", body="")
                             return
-                        if response.status == 303 or (response.status in (301, 302) and method == "POST"):
+                        if status == 303 or (status in (301, 302) and method == "POST"):
                             method = "GET"
+                            body = None
                         await scraper._source_access.wait(request_budget_url(scraper, url))
                         continue
-                    await route.fulfill(response=response)
+                    if settings.ENV == 'production':
+                        await route.fulfill(status=status, headers=dict(headers), body=response.content)
+                    else:
+                        await route.fulfill(response=response)
                     return
                 finally:
-                    await response.dispose()
+                    if settings.ENV == 'production':
+                        await response.aclose()
+                    else:
+                        await response.dispose()
         else:
             await route.continue_()
     except SourceAccessError as exc:
@@ -125,10 +151,13 @@ async def inspect_browser_response(scraper, response):
 
 async def close_browser(scraper):
     errors = []
-    for resource in (getattr(scraper, "browser_context", None), scraper.browser):
+    for resource in (getattr(scraper, '_safe_http', None), getattr(scraper, "browser_context", None), scraper.browser):
         if resource:
             try:
-                await resource.close()
+                if hasattr(resource, 'aclose'):
+                    await resource.aclose()
+                else:
+                    await resource.close()
             except Exception as exc:
                 errors.append(exc)
     if scraper.playwright:
@@ -170,6 +199,7 @@ async def fetch_page_with_delay(
 ):
     from playwright.async_api import Error as BrowserError
 
+    validate_url(url)
     target_page = page if page else scraper.page
     attempts = max(1, min(max_retries, 2))
     for attempt in range(attempts):

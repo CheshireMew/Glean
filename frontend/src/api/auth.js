@@ -1,21 +1,23 @@
 import { requestOperation } from './operations';
-import { clearAuthToken, setAuthToken } from '../auth/session';
+import { clearAuthToken, setBrowserSession, setCsrfToken } from '../auth/session';
 
 export const login = async (username, password) => {
     const formData = new URLSearchParams();
     formData.append('username', username);
     formData.append('password', password);
-    const res = await requestOperation('login', { data: formData });
+    const res = await requestOperation('login', { data: formData, headers: { 'X-Glean-Session': 'browser' } });
     const auth = res.data;
-    if (auth.access_token) {
-        setAuthToken(auth.access_token);
-    }
+    setBrowserSession(auth.csrf_token);
     return auth;
 };
 
 export const updateCredentials = (data) => requestOperation('updateCredentials', { data });
 
-export const getAuthSession = () => requestOperation('authSession');
+export const getAuthSession = async () => {
+    const response = await requestOperation('authSession');
+    setCsrfToken(response.data.csrf_token);
+    return response;
+};
 
 export const logout = async () => {
     try {

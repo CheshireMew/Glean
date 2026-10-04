@@ -99,8 +99,9 @@ class ArchitectureBoundaryTest(unittest.TestCase):
 
         seen = set()
         duplicates = []
-        for route in app.routes:
-            for method in getattr(route, "methods", set()):
+        from fastapi.routing import iter_route_contexts
+        for route in iter_route_contexts(app.routes):
+            for method in (route.methods or set()):
                 key = (method, route.path)
                 if key in seen:
                     duplicates.append(key)

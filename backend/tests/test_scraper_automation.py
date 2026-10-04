@@ -111,11 +111,19 @@ class ScraperAutomationTest(unittest.IsolatedAsyncioTestCase):
         self.scheduler(launcher, ("techflow", "odaily")).run_due_scrapers(lambda: True)
         self.assertEqual(launcher.launch_scraper.call_args.args[0], "odaily")
 
-    def test_ai_sources_do_not_join_legacy_timed_collection(self):
+    def test_ai_sources_use_admin_schedule_and_respect_manual_mode(self):
         launcher = Mock()
         launcher.available_launch_slots.return_value = 2
-        self.scheduler(launcher, ("hacker_news", "lobsters", "rss__hn-chinese-digest", "rss__v2ex-main", "rss__acquired-video", "rss__baochipianjian", "odaily")).run_due_scrapers(lambda: True)
-        self.assertEqual([call.args[0] for call in launcher.launch_scraper.call_args_list], ["odaily"])
+        names = ("hacker_news", "lobsters", "rss__hn-chinese-digest", "rss__v2ex-main", "rss__acquired-video", "rss__baochipianjian", "odaily")
+        scheduler = self.scheduler(launcher, names)
+        scheduler.run_due_scrapers(lambda: True)
+        self.assertEqual([call.args[0] for call in launcher.launch_scraper.call_args_list], [name for name in names if name != 'rss__acquired-video'])
+        launcher.reset_mock()
+        scheduler.run_due_scrapers(lambda: False)
+        launcher.launch_scraper.assert_not_called()
+        self.runtime.update_scraper_config('hacker_news', 'manual', None)
+        scheduler.run_due_scrapers(lambda: True)
+        self.assertNotIn('hacker_news', [call.args[0] for call in launcher.launch_scraper.call_args_list])
 
     async def test_cooldown_blocks_scheduler_manual_queue_and_direct_launch(self):
         scraper = self.runtime.require_scraper("odaily").build_scraper()

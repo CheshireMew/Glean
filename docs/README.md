@@ -12,9 +12,10 @@
 | 接口 | [HTTP API](reference/api.md) | 公开读取、后台管理、来源与微信接口 |
 | 参考 | [数据库](reference/database.md) | 表结构、状态流转与迁移规则 |
 | 参考 | [功能清单](reference/features.md) | 前后台已有功能和模块 |
-| 来源 | [当前 RSS 阅读来源](sources/curated-rss.md) | 本轮筛选后保留并接入的 5 个来源 |
+| 来源 | [当前 RSS 阅读来源](sources/curated-rss.md) | 当前保留并接入的 4 个来源 |
 | 来源 | [全部采集器说明](sources/collectors.md) | 固定站点、RSS 与公众号采集机制 |
 | 运维 | [部署](operations/deployment.md) | 服务器部署步骤；当前本机验收平台为 Windows |
+| 运维 | [安全修复与验证](operations/security.md) | 公开权限、登录、外部请求、数据权限和验证结果 |
 | 运维 | [发布检查](operations/release-checklist.md) | 正式发布时的数据、版本和回退检查 |
 | 许可 | [许可说明](legal/licensing.md) | 当前授权与历史许可 |
 | 许可 | [第三方说明](legal/third-party-notices.md) | 依赖、协议参考与采集内容的来源条款 |

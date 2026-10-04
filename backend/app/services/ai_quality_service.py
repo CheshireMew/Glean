@@ -8,9 +8,10 @@ from .llm import EditorialAIService
 
 
 class AIQualityService:
-    def __init__(self, repository, ai_provider_settings):
+    def __init__(self, repository, ai_provider_settings, budget=None):
         self._repository = repository
         self._ai_provider_settings = ai_provider_settings
+        self._budget = budget
 
     def summary(self, days: int) -> Dict:
         return self._repository().get_summary(days)
@@ -84,7 +85,7 @@ class AIQualityService:
             telemetry.append(event)
             self._repository().record_invocation(event)
 
-        service = EditorialAIService(providers, 1, config.get("throttle_seconds", 0), observer)
+        service = EditorialAIService(providers, 1, config.get("throttle_seconds", 0), observer, self._budget)
         run_key = f"evaluation:{uuid.uuid4().hex}"
         results = []
         try:

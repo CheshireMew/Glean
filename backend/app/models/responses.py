@@ -54,12 +54,14 @@ class AIRefreshData(BaseModel):
 
 
 class TokenData(BaseModel):
-    access_token: str
+    access_token: str | None = None
     token_type: str
+    csrf_token: str | None = None
 
 
 class AuthSessionData(BaseModel):
     username: str
+    csrf_token: str | None = None
 
 
 class TimezoneData(BaseModel):
@@ -445,6 +447,16 @@ class EntityData(ExtensibleResponse):
     symbol: str | None = None
     aliases: list[str]
     metadata: dict
+
+
+class PublicEntityData(BaseModel):
+    id: int
+    entity_type: str
+    slug: str
+    name: str
+    symbol: str | None = None
+    description: str = ''
+    events: dict
 
 
 class NarrativeData(ExtensibleResponse):

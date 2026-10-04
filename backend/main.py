@@ -7,6 +7,7 @@ import time
 import uuid
 
 from backend.app.core.config import settings
+from backend.app.core.http_security import HTTPSecurityMiddleware
 from backend.app.core.errors import api_exception_handler, global_exception_handler, http_exception_handler, validation_exception_handler
 from backend.app.core.exceptions import APIException
 from backend.app.composition import app_services
@@ -94,6 +95,8 @@ app.include_router(market_intelligence.router, prefix="/api", tags=["Market Inte
 
 def readiness_response(check):
     ready, payload = check()
+    if settings.ENV == 'production':
+        payload = {'status': 'ready' if ready else 'unavailable'}
     content = {**payload, "version": settings.APP_VERSION}
     return content if ready else JSONResponse(status_code=503, content=content)
 
@@ -116,6 +119,9 @@ def readiness_check():
 @app.get("/health/pipeline")
 def pipeline_readiness_check():
     return readiness_response(app_services.runtime_health.pipeline_readiness)
+
+
+app.add_middleware(HTTPSecurityMiddleware)
 
 
 if __name__ == "__main__":

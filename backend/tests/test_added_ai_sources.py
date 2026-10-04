@@ -186,10 +186,9 @@ class AddedSourceIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.content("rss__v2ex-tech")["items"][0]["source_excerpt"], "技术栏正文")
         self.assertEqual(self.content("rss__v2ex-main")["items"][0]["source_excerpt"], "首页新正文")
 
-    async def test_selected_digest_video_and_podcast_reach_public_feed_and_translation(self):
+    async def test_selected_digest_and_podcast_reach_public_feed_and_translation(self):
         for key, url in (
             ("rss__hn-chinese-digest", "https://supertechfans.com/cn/post/test/"),
-            ("rss__acquired-video", "https://www.youtube.com/watch?v=test"),
             ("rss__baochipianjian", "https://www.xiaoyuzhoufm.com/episode/test"),
         ):
             with self.subTest(source=key):
@@ -202,8 +201,9 @@ class AddedSourceIntegrationTest(unittest.IsolatedAsyncioTestCase):
                 self.runs._ai_translation.translate_pending.assert_awaited_with(key, 100)
         source_keys = {s["key"] for s in self.content(None)["sources"]}
         self.assertNotIn("rss__qbitai", source_keys)
+        self.assertNotIn("rss__acquired-video", source_keys)
         self.assertTrue({"rss__v2ex-main", "rss__v2ex-tech", "rss__hn-chinese-digest",
-                         "rss__acquired-video", "rss__baochipianjian"} <= source_keys)
+                         "rss__baochipianjian"} <= source_keys)
 
     def test_upgrade_adds_feeds_once_and_preserves_existing_configuration(self):
         source = repositories().rss_sources.get_source_by_slug("v2ex-tech")
@@ -224,7 +224,7 @@ class AddedSourceIntegrationTest(unittest.IsolatedAsyncioTestCase):
         finally:
             conn.close()
         feeds = repositories().rss_sources.list_sources()
-        self.assertEqual(len(feeds), 15)
+        self.assertEqual(len(feeds), 14)
         kept = next(s for s in feeds if s["slug"] == "v2ex-tech")
         self.assertFalse(kept["enabled"])
         self.assertEqual(kept["display_name"], "我的订阅")
