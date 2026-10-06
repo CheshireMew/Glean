@@ -7,6 +7,7 @@ from typing import Dict
 from shared.content_contract import REVIEW_STATUS_PROCESSING
 
 from ..core.exceptions import ConflictError, NotFoundError, ValidationError
+from ..domain.editorial import validate_draft_items
 
 
 class EditorialWorkbenchService:
@@ -149,22 +150,8 @@ class EditorialWorkbenchService:
         with self._transaction() as tx:
             repo = tx.editorial_workbench
             publication = repo.get_publication(values["publication_id"])
-            if not publication:
-                raise NotFoundError("发布频道不存在")
-            if publication["content_type"] != values["content_type"]:
-                raise ValidationError("草稿内容类型与发布频道不一致")
             items = values["items"]
-            entry_ids = [item["review_entry_id"] for item in items]
-            if len(entry_ids) != len(set(entry_ids)):
-                raise ValidationError("草稿不能重复包含同一条内容")
-            for entry_id in entry_ids:
-                entry = repo.get_entry(entry_id)
-                if not entry:
-                    raise NotFoundError(f"审核内容 {entry_id} 不存在")
-                if entry.get("profile_slug") != publication["profile_slug"]:
-                    raise ValidationError(f"审核内容 {entry_id} 不属于该内容档案")
-                if entry.get("content_type") != values["content_type"]:
-                    raise ValidationError(f"审核内容 {entry_id} 类型不一致")
+            validate_draft_items(publication, values["content_type"], items, repo.get_entry)
             draft_key = f"draft:{values['content_type']}:{uuid.uuid4().hex}"
             draft_id = repo.create_draft(
                 draft_key,
@@ -186,6 +173,7 @@ class EditorialWorkbenchService:
         return self._repository().list_drafts(status, limit)
 
     def update_draft(self, draft_id: int, values: Dict) -> Dict:
+        values = dict(values)
         with self._transaction() as tx:
             repo = tx.editorial_workbench
             draft = repo.get_draft(draft_id)
@@ -194,6 +182,10 @@ class EditorialWorkbenchService:
             if draft["status"] in {"publishing", "published"}:
                 raise ConflictError("正在发布或已经发布的草稿不能修改")
             items = values.pop("items", None)
+            validate_draft_items(
+                repo.get_publication(draft["publication_id"]), draft["content_type"],
+                draft["items"] if items is None else items, repo.get_entry,
+            )
             scheduled_at = values.get("scheduled_at")
             if scheduled_at is not None:
                 values["scheduled_at"] = scheduled_at.isoformat()

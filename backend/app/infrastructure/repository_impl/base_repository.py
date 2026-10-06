@@ -3,6 +3,7 @@ import sqlite3
 
 from shared.db_base import DatabaseBase
 from ..lease_fencing import assert_current_operation_lease
+from ...core.exceptions import ConflictError
 
 
 class QueryResult:
@@ -52,11 +53,13 @@ class BaseRepository:
                 assert_current_operation_lease(conn)
                 conn.commit()
             return QueryResult(rows=rows, rowcount=cursor.rowcount, lastrowid=cursor.lastrowid)
-        except Exception:
+        except Exception as exc:
             # A repository may run inside a caller-owned unit of work or savepoint.
             # Only the layer that opened a transaction is allowed to roll it back.
             if started_transaction and conn.in_transaction:
                 conn.rollback()
+            if isinstance(exc, sqlite3.IntegrityError) and str(exc) == 'content_has_active_editorial_reference':
+                raise ConflictError('内容仍被未完成的草稿或交付引用，请先移除草稿条目、取消草稿或完成原交付') from exc
             raise
         finally:
             cursor.close()

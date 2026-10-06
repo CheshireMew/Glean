@@ -41,6 +41,7 @@ class ScraperScheduleService:
             is_working_hours()
             and self._scraper_registry.get(name)
             and self._runtime_state.get_scraper_config(name).get("interval")
+            and not self._runtime_state.get_configuration_error(name)
             and (self._source_operations is None or self._source_operations.is_source_enabled(name))
         )
 

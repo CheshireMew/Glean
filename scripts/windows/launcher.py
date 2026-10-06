@@ -19,10 +19,10 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import ProxyHandler, build_opener
-import uuid
 import webbrowser
 
 from process_job import ProcessJob
+from launcher_logs import BoundedLogWriter, LogPolicy, LogRunStore
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 HTTP = build_opener(ProxyHandler({}))
@@ -133,12 +133,22 @@ class Service:
     log_path: Path
     tail: deque = field(default_factory=lambda: deque(maxlen=18))
     reader: threading.Thread | None = None
+    log_max_bytes: int = 2 * 1024 * 1024
+    run_id: str = ''
+    reader_error: str | None = None
 
     def collect(self):
-        with self.log_path.open("w", encoding="utf-8", buffering=1) as output:
+        output = None
+        try:
+            output = BoundedLogWriter(self.log_path, self.log_max_bytes, f'run={self.run_id} service={self.name}')
             for line in self.process.stdout:
                 output.write(line)
-                self.tail.append(line.rstrip())
+                self.tail.append(line.rstrip()[-4096:])
+        except Exception as exc:
+            self.reader_error = str(exc)
+        finally:
+            if output:
+                output.close()
 
     def failure(self) -> str:
         if self.reader:
@@ -152,9 +162,9 @@ class Launcher:
         self.port = port
         self.env = env
         self.services: list[Service] = []
+        self.log_store = LogRunStore(PROJECT_ROOT / 'data/logs/launcher', LogPolicy.from_env(env))
+        self.log_dir, self.log_manifest = self.log_store.accept()
         self.job = ProcessJob()
-        self.log_dir = PROJECT_ROOT / "data/logs/launcher" / f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
-        self.log_dir.mkdir(parents=True, exist_ok=True)
         self.url = f"http://127.0.0.1:{port}"
 
     def start(self, name: str, command: list[str], cwd: Path) -> Service:
@@ -171,7 +181,8 @@ class Launcher:
             process.terminate()
             process.wait(timeout=5)
             raise
-        service = Service(name, process, self.log_dir / f"{name}.log")
+        service = Service(name, process, self.log_dir / f"{name}.log",
+                          log_max_bytes=self.log_store.policy.file_bytes, run_id=self.log_manifest['run_id'])
         service.reader = threading.Thread(target=service.collect, daemon=True)
         self.services.append(service)
         service.reader.start()
@@ -179,6 +190,8 @@ class Launcher:
 
     def check_processes(self):
         for service in self.services:
+            if service.reader_error:
+                raise StartupError(f'{service.name} 日志写入失败：{service.reader_error}；日志：{service.log_path}')
             if service.process.poll() is not None:
                 raise StartupError(service.failure())
 
@@ -205,6 +218,10 @@ class Launcher:
         state = {"status": status, "url": self.url, "launcher_pid": os.getpid(), "log_dir": str(self.log_dir),
                  "services": [{"name": service.name, "pid": service.process.pid} for service in self.services], "error": error}
         (PROJECT_ROOT / "data/launcher.json").write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.log_manifest['state'] = status
+        if status in {'stopped', 'failed'}:
+            self.log_manifest['finished_at'] = datetime.now(timezone.utc).isoformat()
+        self.log_store.write(self.log_dir, self.log_manifest)
 
     def wait_previous_worker(self):
         # Closing a console kills its job immediately; the former lease can live another 30s.
@@ -279,7 +296,12 @@ def main() -> int:
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--frontend-only", action="store_true")
+    parser.add_argument('--logs-status', action='store_true', help='只读查看日志预算、运行归属和清理候选，不删除文件')
     args = parser.parse_args()
+    if args.logs_status:
+        store = LogRunStore(PROJECT_ROOT / 'data/logs/launcher', LogPolicy.from_env(os.environ))
+        print(json.dumps(store.inspect(), ensure_ascii=False, indent=2))
+        return 0
     launcher = None
     status = "stopped"
     error_text = None

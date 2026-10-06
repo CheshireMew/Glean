@@ -57,18 +57,11 @@ def should_stop_scraping(scraper, news_title: str, news_url: str, news_time: dat
     if not scraper.last_news_title and not scraper.last_news_url:
         return False
 
-    known = bool(
-        (scraper.last_news_title and news_title.replace(" ", "") == scraper.last_news_title.replace(" ", ""))
-        or news_url in scraper.existing_urls
-        or (scraper.last_news_url and news_url == scraper.last_news_url)
-    )
-    if not known:
-        scraper._consecutive_known_items = 0
-        return False
-    scraper.encountered_existing_items = True
-    scraper._consecutive_known_items = getattr(scraper, "_consecutive_known_items", 0) + 1
-    print(f"[增量抓取] 匹配到历史记录，连续 {scraper._consecutive_known_items} 条")
-    return scraper._consecutive_known_items >= 3
+    if news_url in scraper.existing_urls or news_url == scraper.last_news_url:
+        scraper.encountered_existing_items = True
+    # Lists can pin/reorder old entries. Only item limits/list exhaustion stop a
+    # scan; an old URL is skipped by the caller, never evidence that the rest is old.
+    return False
 
 
 def _parse_timestamp(value):

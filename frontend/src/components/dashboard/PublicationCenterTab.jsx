@@ -18,6 +18,7 @@ import {
     testPublicationChannel, updateAnalystSubscription, updatePublication, updatePublicationChannel,
 } from '../../api/publications';
 import { formatLocalDateTime } from '../../utils/time';
+import { retryDelivery } from '../../api/pipeline';
 
 const CHANNEL_TYPES = [
     { value: 'telegram', label: 'Telegram' }, { value: 'email', label: '邮件' },
@@ -45,6 +46,7 @@ export default function PublicationCenterTab() {
     const [draftPreview, setDraftPreview] = useState(null);
     const [subscriptionEditing, setSubscriptionEditing] = useState(null);
     const [busy, setBusy] = useState('');
+    const [correctionDeliveries, setCorrectionDeliveries] = useState({});
 
     const load = async () => {
         setState((current) => ({ ...current, loading: true, error: '' }));
@@ -53,6 +55,14 @@ export default function PublicationCenterTab() {
                 listPublications(), listPublicationChannels(), listPublicationDrafts(), listPublicationCorrections(), listAnalystSubscriptions(),
             ]);
             setState({ loading: false, error: '', publications: publications.data || [], channels: channels.data || [], drafts: drafts.data || [], corrections: corrections.data || [], subscriptions: subscriptions.data || [] });
+            setCorrectionDeliveries((current) => {
+                const next = { ...current };
+                for (const correction of corrections.data || []) {
+                    if (correction.delivery) next[correction.id] = correction.delivery;
+                    else if (correction.published_at) delete next[correction.id];
+                }
+                return next;
+            });
         } catch (error) {
             setState((current) => ({ ...current, loading: false, error: error.message || '发布中心加载失败' }));
         }
@@ -159,8 +169,35 @@ export default function PublicationCenterTab() {
     };
     const publishCorrection = async (id) => {
         setBusy(`correction:${id}`);
-        try { await publishPublicationCorrection(id); message.success('更正已发送'); await load(); }
+        try {
+            const response = await publishPublicationCorrection(id);
+            setCorrectionDeliveries((current) => ({ ...current, [id]: response.data }));
+            if (response.data.status === 'published') message.success('更正已发布');
+            else message.warning('更正仍有渠道未完成，请查看投递结果');
+            await load();
+        }
         catch (error) { message.error(error.message || '更正发送失败'); } finally { setBusy(''); }
+    };
+    const retryCorrection = (id, operation) => {
+        const performRetry = async () => {
+            setBusy(`correction:${id}`);
+            try {
+                await retryDelivery(operation.operation_key);
+                const response = await publishPublicationCorrection(id);
+                setCorrectionDeliveries((current) => ({ ...current, [id]: response.data }));
+                if (response.data.status === 'published') message.success('更正已发布');
+                else message.warning('仍有渠道未完成，请继续核对投递结果');
+                await load();
+            } catch (error) { message.error(error.message || '更正重试失败'); }
+            finally { setBusy(''); }
+        };
+        if (operation.status === 'needs_attention') {
+            Modal.confirm({
+                title: '确认补发结果不确定的更正？',
+                content: `请先检查 ${operation.channel_slug}：部分消息可能已经送达。确认需要补发后，只重试未完成的分段。`,
+                okText: '确认补发', cancelText: '取消', onOk: performRetry,
+            });
+        } else void performRetry();
     };
     const editSubscription = (record = null) => {
         setSubscriptionEditing(record || { id: null });
@@ -209,7 +246,24 @@ export default function PublicationCenterTab() {
         { title: '类型', dataIndex: 'correction_type', render: (value) => <Tag color="red">{value}</Tag> },
         { title: '对象', render: (_, row) => row.report_title || row.entry_title || row.event_title || '—' },
         { title: '内容', dataIndex: 'message' },
-        { title: '状态', render: (_, row) => row.published_at ? <Tag color="green">已发布</Tag> : <Tag>待发布</Tag> },
+        { title: '状态', render: (_, row) => {
+            const delivery = correctionDeliveries[row.id];
+            if (row.published_at || delivery?.status === 'published') return <Tag color="green">已发布</Tag>;
+            if (!delivery) return <Tag>待发布</Tag>;
+            return <Alert type="warning" showIcon title="更正尚未完整送达" description={<Space orientation="vertical">
+                {(delivery.operations || []).map((operation) => <Space key={operation.operation_key} wrap>
+                    <Typography.Text>{operation.channel_slug}</Typography.Text>
+                    <Tag color={operation.status === 'sent' ? 'green' : operation.status === 'failed' ? 'red' : 'orange'}>
+                        {operation.status === 'sent' ? '已送达' : operation.status === 'failed' ? '发送失败' : operation.status === 'needs_attention' ? '结果待确认' : '发送中'}
+                        {` ${operation.sent_parts}/${operation.parts}`}
+                    </Tag>
+                    {operation.last_error && <Typography.Text type="secondary">{operation.last_error}</Typography.Text>}
+                    {['failed', 'needs_attention'].includes(operation.status) && <Button size="small" loading={busy === `correction:${row.id}`} onClick={() => retryCorrection(row.id, operation)}>
+                        {operation.status === 'needs_attention' ? '核对后确认补发' : '重试未完成部分'}
+                    </Button>}
+                </Space>)}
+            </Space>} />;
+        } },
         { title: '操作', render: (_, row) => !row.published_at && <Button loading={busy === `correction:${row.id}`} onClick={() => publishCorrection(row.id)}>发送更正</Button> },
     ];
     const subscriptionColumns = [

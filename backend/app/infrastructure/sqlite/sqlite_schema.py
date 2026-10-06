@@ -11,7 +11,6 @@ from shared.content_contract import (
     DELIVERY_PART_STATUS_PENDING,
     DELIVERY_STATUSES,
     DELIVERY_STATUS_PENDING,
-    DELIVERY_STATUS_SENT,
     ENRICHMENT_STATUSES,
     ENRICHMENT_STATUS_PENDING,
     INCOMING_STAGE,
@@ -29,6 +28,7 @@ from shared.content_contract import (
 )
 
 from .sqlite_support import column_exists, ensure_column, sql_string_list
+from .news_identity_schema import create_news_identity_schema
 
 
 def create_news_translations_table(cursor: sqlite3.Cursor) -> None:
@@ -82,6 +82,7 @@ def create_news_table(cursor: sqlite3.Cursor) -> None:
         )
         """
     )
+    create_news_identity_schema(cursor)
 
 
 def ensure_news_columns(cursor: sqlite3.Cursor) -> None:
@@ -740,12 +741,10 @@ def create_public_revision_tracking(cursor: sqlite3.Cursor) -> None:
     )
     for trigger_name in trigger_names:
         cursor.execute(f"DROP TRIGGER IF EXISTS {trigger_name}")
-    public_new = (
-        f"NEW.review_status = '{REVIEW_STATUS_SELECTED}' AND NEW.delivery_status = '{DELIVERY_STATUS_SENT}'"
-    )
-    public_old = (
-        f"OLD.review_status = '{REVIEW_STATUS_SELECTED}' AND OLD.delivery_status = '{DELIVERY_STATUS_SENT}'"
-    )
+    # This is a conservative change counter for potential public content.
+    # Website visibility is independent of external channel delivery status.
+    public_new = f"NEW.review_status = '{REVIEW_STATUS_SELECTED}'"
+    public_old = f"OLD.review_status = '{REVIEW_STATUS_SELECTED}'"
     cursor.execute(
         f"""
         CREATE TRIGGER public_revision_review_insert AFTER INSERT ON {REVIEW_TABLE}
@@ -811,7 +810,6 @@ def create_public_revision_tracking(cursor: sqlite3.Cursor) -> None:
             WHERE content_type IN (
                 SELECT DISTINCT content_type FROM {REVIEW_TABLE}
                 WHERE event_id = NEW.id AND review_status = '{REVIEW_STATUS_SELECTED}'
-                  AND delivery_status = '{DELIVERY_STATUS_SENT}'
             );
         END
         """
@@ -831,7 +829,6 @@ def create_public_revision_tracking(cursor: sqlite3.Cursor) -> None:
                     SELECT DISTINCT content_type FROM {REVIEW_TABLE}
                     WHERE event_id IN ({event_expression})
                       AND review_status = '{REVIEW_STATUS_SELECTED}'
-                      AND delivery_status = '{DELIVERY_STATUS_SENT}'
                 );
             END
             """
@@ -848,7 +845,6 @@ def create_public_revision_tracking(cursor: sqlite3.Cursor) -> None:
                 SELECT DISTINCT r.content_type
                 FROM {EVENT_SOURCE_TABLE} es JOIN {REVIEW_TABLE} r ON r.event_id = es.event_id
                 WHERE es.news_id = NEW.id AND r.review_status = '{REVIEW_STATUS_SELECTED}'
-                  AND r.delivery_status = '{DELIVERY_STATUS_SENT}'
             );
         END
         """

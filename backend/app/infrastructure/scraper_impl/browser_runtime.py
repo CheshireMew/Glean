@@ -20,6 +20,8 @@ async def init_browser(scraper, headless: bool = True):
     scraper._source_access_error = None
     scraper._source_redirects = {}
     scraper._source_requests = {}
+    scraper._source_closing = False
+    scraper._source_closing_pages = set()
     scraper._source_access = source_access
     scraper.playwright = await async_playwright().start()
     scraper.browser = await scraper.playwright.chromium.launch(headless=headless, chromium_sandbox=True)
@@ -30,7 +32,8 @@ async def init_browser(scraper, headless: bool = True):
     async def handle_route(route):
         request = route.request
         pending = None
-        if request.resource_type in {"document", "xhr", "fetch"} and request_budget_url(scraper, request.url) == scraper.base_url:
+        if (not is_prefetch(request) and request.resource_type in {"document", "xhr", "fetch"}
+                and request_budget_url(scraper, request.url) == scraper.base_url):
             pending = scraper._source_requests.setdefault(request.frame.page, set())
             pending.add(asyncio.current_task())
         try:
@@ -59,11 +62,37 @@ def request_budget_url(scraper, url):
     return scraper.base_url if host == site or host.endswith("." + site) else url
 
 
+def is_prefetch(request):
+    headers = getattr(request, "headers", {})
+    return ("prefetch" in headers.get("purpose", "").lower()
+            or "prefetch" in headers.get("sec-purpose", "").lower()
+            or headers.get("next-router-prefetch") == "1")
+
+
+def request_is_closing(scraper, request):
+    if getattr(scraper, "_source_closing", False):
+        return True
+    try:
+        page = request.frame.page
+        return page.is_closed() or page in getattr(scraper, "_source_closing_pages", set())
+    except Exception:
+        return False
+
+
+async def abort_browser_request(scraper, route):
+    try:
+        await route.abort()
+    except Exception:
+        if not request_is_closing(scraper, route.request):
+            raise
+
+
 async def pace_browser_request(scraper, route):
     request = route.request
     essential_request = request.resource_type == "document" or request_budget_url(scraper, request.url) == scraper.base_url
-    if scraper._source_access_error or request.resource_type in {"image", "media", "font"}:
-        await route.abort()
+    if (scraper._source_access_error or is_prefetch(request)
+            or request.resource_type in {"image", "media", "font"}):
+        await abort_browser_request(scraper, route)
         return
     try:
         budget_url = request_budget_url(scraper, request.url)
@@ -72,7 +101,7 @@ async def pace_browser_request(scraper, route):
         else:
             scraper._source_access.assert_allowed(budget_url)
         if scraper._source_access_error:
-            await route.abort()
+            await abort_browser_request(scraper, route)
         elif request.resource_type in {"document", "xhr", "fetch"} or settings.ENV == 'production':
             # Playwright routing does not re-intercept native HTTP redirects.
             # Fetch one hop at a time so every destination uses the same gate.
@@ -126,18 +155,21 @@ async def pace_browser_request(scraper, route):
     except SourceAccessError as exc:
         if essential_request:
             scraper._source_access_error = exc
-        await route.abort()
+        await abort_browser_request(scraper, route)
     except Exception as exc:
+        if request_is_closing(scraper, request):
+            return
         # A routing error must resolve the paused browser request and fail closed.
         error = scraper._source_access.defer(
             request_budget_url(scraper, request.url), f"浏览器请求未完成（{type(exc).__name__}）", minimum=600)
         if essential_request:
             scraper._source_access_error = error
-        await route.abort()
+        await abort_browser_request(scraper, route)
 
 
 async def inspect_browser_response(scraper, response):
-    if scraper._source_access_error or response.request.resource_type not in {"document", "xhr", "fetch"}:
+    if (scraper._source_access_error or request_is_closing(scraper, response.request)
+            or response.request.resource_type not in {"document", "xhr", "fetch"}):
         return
     try:
         budget_url = request_budget_url(scraper, response.url)
@@ -149,7 +181,20 @@ async def inspect_browser_response(scraper, response):
         scraper._source_access_error = exc
 
 
+async def cancel_page_requests(scraper, page):
+    getattr(scraper, "_source_closing_pages", set()).add(page)
+    tasks = list(getattr(scraper, "_source_requests", {}).get(page, set()))
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    getattr(scraper, "_source_requests", {}).pop(page, None)
+
+
 async def close_browser(scraper):
+    scraper._source_closing = True
+    for page in list(getattr(scraper, "_source_requests", {})):
+        await cancel_page_requests(scraper, page)
     errors = []
     for resource in (getattr(scraper, '_safe_http', None), getattr(scraper, "browser_context", None), scraper.browser):
         if resource:

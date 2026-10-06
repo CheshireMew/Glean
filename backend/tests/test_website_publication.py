@@ -92,9 +92,14 @@ class WebsitePublicationTest(unittest.IsolatedAsyncioTestCase):
             await self.services.publication_workflow.publish_draft(draft["id"], website_only=True)
         self.services.publications.update_publication(self.publication["id"], {"is_public": True})
         repositories().editorial_workbench.update_draft(draft["id"], status="publishing")
-        with self.assertRaises(ConflictError):
-            await self.services.publication_workflow.publish_draft(draft["id"], website_only=True)
-
+        for website_only in (True, False):
+            with self.subTest(website_only=website_only):
+                with self.assertRaisesRegex(ConflictError, "缺少原发布计划"):
+                    await self.services.publication_workflow.publish_draft(draft["id"], website_only=website_only)
+        self.assertIsNone(self.services.delivery_operations.get_plan(f"draft:{draft['draft_key']}"))
+        self.assertEqual(repositories().delivery_operations.list_operations(), [])
+        self.assertEqual(repositories().daily_reports.list_reports("article", 20, 0)["total"], 0)
+        self.assertEqual(self.public()["total"], 0)
 
     async def test_sent_delivery_cannot_bypass_private_or_disabled_publication(self):
         self.select()
@@ -121,13 +126,71 @@ class WebsitePublicationTest(unittest.IsolatedAsyncioTestCase):
     async def test_failed_website_write_rolls_back_and_can_retry(self):
         self.select()
         draft = self.draft()
-        with patch.object(DailyReportRepository, "save_report_items", side_effect=RuntimeError("write failed")):
+        plan_key = f"draft:{draft['draft_key']}"
+        original_snapshot = repositories().editorial_workbench.execute(
+            "SELECT snapshot_json FROM publication_draft_items WHERE draft_id=?", (draft["id"],),
+        ).fetchone()[0]
+        original_save = DailyReportRepository.save_report_items
+
+        def fail_after_writing(repo, report_id, entries):
+            original_save(repo, report_id, entries)
+            raise RuntimeError("write failed")
+
+        with patch.object(DailyReportRepository, "save_report_items", new=fail_after_writing):
             with self.assertRaisesRegex(RuntimeError, "write failed"):
                 await self.services.publication_workflow.publish_draft(draft["id"], website_only=True)
-        self.assertEqual(repositories().editorial_workbench.get_draft(draft["id"])["status"], "draft")
+        # The accepted plan survives; all unfinished website writes roll back.
+        stored_draft = repositories().editorial_workbench.get_draft(draft["id"])
+        self.assertEqual(stored_draft["status"], "publishing")
+        self.assertIsNone(stored_draft["published_report_id"])
+        frozen = self.services.delivery_operations.get_plan(plan_key)
+        self.assertIsNotNone(frozen)
+        self.assertIsNone(frozen["finalized_at"])
+        self.assertIsNone(frozen["result"])
+        self.assertEqual(frozen["operation_keys"], [])
         self.assertEqual(repositories().daily_reports.list_reports("article", 20, 0)["total"], 0)
+        self.assertEqual(repositories().daily_reports.execute("SELECT COUNT(*) FROM daily_report_items").fetchone()[0], 0)
+        snapshot = repositories().editorial_workbench.execute(
+            "SELECT snapshot_json FROM publication_draft_items WHERE draft_id=?", (draft["id"],),
+        ).fetchone()[0]
+        self.assertEqual(snapshot, original_snapshot)
         self.assertEqual(self.public()["total"], 0)
-        self.assertEqual((await self.services.publication_workflow.publish_draft(draft["id"], website_only=True))["status"], "published")
+
+        # Retry after a restart must publish the accepted version, even if the
+        # live entry or publication template has changed in the meantime.
+        self.services = AppServices()
+        with self.assertRaises(ConflictError):
+            self.services.editorial_workbench.update_draft(draft["id"], {"title": "不能修改已接收的草稿"})
+        with self.assertRaisesRegex(ConflictError, "已有发布计划"):
+            await self.services.publication_workflow.publish_draft(draft["id"], website_only=False)
+        self.services.editorial_workbench.update_entry(self.entry["id"], {
+            "title": "重试之前的新标题", "review_summary": "重试之前的新摘要", "change_note": "后续修改",
+        }, "editor")
+        self.services.publications.update_publication(self.publication["id"], {"template": {"title_prefix": "新模板"}})
+        with patch.object(self.services.publication_channel_gateway, "send_message_result", new_callable=AsyncMock) as send:
+            result = await self.services.publication_workflow.publish_draft(draft["id"], website_only=True)
+            repeat = await self.services.publication_workflow.publish_draft(draft["id"], website_only=True)
+            send.assert_not_called()
+        self.assertEqual(result["status"], "published")
+        self.assertEqual(result["report_id"], repeat["report_id"])
+        self.assertEqual(result["operations"], [])
+        stored_draft = repositories().editorial_workbench.get_draft(draft["id"])
+        self.assertEqual(stored_draft["status"], "published")
+        self.assertEqual(stored_draft["published_report_id"], result["report_id"])
+        reports = repositories().daily_reports.list_reports("article", 20, 0)
+        self.assertEqual(reports["total"], 1)
+        report = reports["items"][0]
+        self.assertEqual(report["title"], frozen["payload"]["title"])
+        self.assertEqual(report["content"], frozen["payload"]["content"])
+        self.assertEqual(len(report["items"]), 1)
+        self.assertEqual(report["items"][0]["title"], frozen["payload"]["entries"][0]["title"])
+        self.assertEqual(report["items"][0]["review_summary"], frozen["payload"]["entries"][0]["review_summary"])
+        completed = self.services.delivery_operations.get_plan(plan_key)
+        self.assertIsNotNone(completed["finalized_at"])
+        self.assertEqual(completed["result"]["report_id"], result["report_id"])
+        self.assertEqual(completed["payload"], frozen["payload"])
+        self.assertEqual(self.public()["total"], 1)
+        self.assertEqual(repositories().editorial_workbench.get_entry(self.entry["id"])["delivery_status"], "pending")
 
     async def test_background_scraper_outlives_command_database_transaction(self):
         # Only the remote scraper is replaced; launch, claims and persistence are real.

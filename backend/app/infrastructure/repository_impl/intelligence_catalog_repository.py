@@ -290,7 +290,8 @@ class IntelligenceCatalogRepository(BaseRepository):
         where = "WHERE a.enabled = 1" if enabled_only else ""
         rows = self.execute(
             f"""
-            SELECT a.*, w.name AS watchlist_name, c.name AS channel_name, c.channel_type
+            SELECT a.*, w.name AS watchlist_name, c.name AS channel_name, c.channel_type,
+                   c.slug AS channel_slug
             FROM alert_policies a
             LEFT JOIN watchlists w ON w.id = a.watchlist_id
             JOIN publication_channels c ON c.id = a.channel_id
@@ -387,3 +388,53 @@ class IntelligenceCatalogRepository(BaseRepository):
             (status, operation_key, status, policy_id, event_id),
         )
         return cursor.rowcount > 0
+
+    def recover_alert_matches(self) -> None:
+        # Old versions could write queued before any operation was accepted.
+        # Only a proven missing operation returns to pending. Unknown delivery
+        # remains queued and is never automatically replayed.
+        self.execute('''
+            UPDATE alert_matches SET status='pending', operation_key=NULL
+            WHERE status='queued' AND NOT EXISTS (
+                SELECT 1 FROM delivery_operations d WHERE d.operation_key=alert_matches.operation_key
+            )
+        ''')
+        self.execute('''
+            UPDATE alert_matches SET status='sent', delivered_at=COALESCE(delivered_at, CURRENT_TIMESTAMP)
+            WHERE status IN ('queued', 'failed') AND EXISTS (
+                SELECT 1 FROM delivery_operations d
+                WHERE d.operation_key=alert_matches.operation_key AND d.status='sent'
+            )
+        ''')
+        self.execute('''
+            UPDATE alert_matches SET status='failed'
+            WHERE status='queued' AND EXISTS (
+                SELECT 1 FROM delivery_operations d
+                WHERE d.operation_key=alert_matches.operation_key AND d.status='failed'
+            )
+        ''')
+
+    def pending_alert_matches(self, policy_ids: list[int], limit: int) -> list[Dict]:
+        if not policy_ids:
+            return []
+        placeholders = ','.join('?' for _ in policy_ids)
+        return [dict(row) for row in self.execute(f'''
+            SELECT m.*, a.name AS policy_name, e.title AS event_title, e.content_type,
+                   c.slug AS channel_slug, c.channel_type
+            FROM alert_matches m JOIN alert_policies a ON a.id=m.policy_id
+            JOIN content_events e ON e.id=m.event_id
+            JOIN publication_channels c ON c.id=a.channel_id
+            WHERE m.status='pending' AND m.policy_id IN ({placeholders})
+            ORDER BY m.matched_at, m.policy_id, m.event_id LIMIT ?
+        ''', (*policy_ids, limit)).fetchall()]
+
+    def legacy_pending_alert_operations(self) -> list[str]:
+        return [row['operation_key'] for row in self.execute('''
+            SELECT DISTINCT d.operation_key FROM delivery_operations d
+            JOIN alert_matches m ON m.operation_key=d.operation_key
+            WHERE m.status='queued' AND d.operation_type='event_alert' AND d.status='pending'
+              AND NOT EXISTS (
+                  SELECT 1 FROM delivery_plans p, json_each(p.operation_keys_json) k
+                  WHERE k.value=d.operation_key
+              ) ORDER BY d.id
+        ''').fetchall()]

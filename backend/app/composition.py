@@ -273,12 +273,6 @@ class AppServices:
             self.telegram_messages,
             self.delivery_operations,
         )
-        self.delivery_retry = DeliveryRetryService(
-            delivery_operation_repo,
-            self.delivery_operations,
-            self.daily_delivery,
-            self.manual_entry_delivery,
-        )
         self.telegram_automation_delivery = TelegramAutomationDeliveryService(
             self.telegram_gateway,
             self.daily_delivery,
@@ -303,6 +297,10 @@ class AppServices:
         self.publication_workflow.alert_evaluator = self.intelligence_catalog.evaluate_alerts
         self.publication_workflow.classification_runner = self.intelligence_catalog.classify_recent
         self.publication_workflow.analyst_subscription_runner = self.analyst_subscriptions.deliver
+        self.delivery_retry = DeliveryRetryService(
+            delivery_operation_repo, self.delivery_operations, self.daily_delivery,
+            self.manual_entry_delivery, self.publication_workflow, self.analyst_subscriptions,
+        )
 
         self.ai_pipeline = AIPipelineService(
             self.ai_provider_settings,

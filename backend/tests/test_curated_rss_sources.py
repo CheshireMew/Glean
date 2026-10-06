@@ -5,9 +5,9 @@ from backend.app.domain.ai_sources import PUBLIC_AI_SOURCES
 from backend.app.infrastructure.repository_impl.news_repository import NewsRepository
 from backend.app.infrastructure.sqlite.sqlite_migration_plan import (
     JUEJIN_WEEKLY_VERSION,
+    CURATED_RSS_VERSION,
     LEGACY_BASELINE_VERSION,
     LEGACY_COMPATIBILITY_STEP,
-    SCHEMA_VERSION,
     resolve_migration_plan,
 )
 
@@ -20,7 +20,7 @@ class CuratedSourceMigrationTest(unittest.TestCase):
             cursor = conn.cursor()
             LEGACY_COMPATIBILITY_STEP.apply(cursor)
             for step in resolve_migration_plan(LEGACY_BASELINE_VERSION):
-                if step.to_version == SCHEMA_VERSION:
+                if step.to_version == CURATED_RSS_VERSION:
                     break
                 step.apply(cursor)
             cursor.execute("UPDATE rss_sources SET display_name='我的技术订阅', enabled=0, default_interval=60 WHERE slug='v2ex-tech'")
@@ -31,9 +31,12 @@ class CuratedSourceMigrationTest(unittest.TestCase):
                 "published_at": "2026-09-27 10:00:00"})
             before = cursor.execute("SELECT COUNT(*) FROM rss_sources").fetchone()[0]
             plan = resolve_migration_plan(JUEJIN_WEEKLY_VERSION)
-            self.assertEqual(len(plan), 1)
+            self.assertEqual([step.name for step in plan], [
+                'curated-rss-subscriptions', 'immutable-business-delivery-plans-and-draft-retention',
+                'persistent-media-article-identities'])
             for _ in range(2):
-                plan[0].apply(cursor)
+                for step in plan:
+                    step.apply(cursor)
             rows = {r['slug']: dict(r) for r in cursor.execute("SELECT * FROM rss_sources")}
             self.assertEqual(len(rows), before + 3)
             self.assertEqual(rows['qbitai']['enabled'], 0)

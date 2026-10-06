@@ -5,7 +5,7 @@ from typing import Dict
 
 from shared.content_contract import DELIVERY_OPERATION_STATUS_SENT
 
-from ..core.exceptions import NotFoundError, ValidationError
+from ..core.exceptions import ConflictError, NotFoundError, ValidationError
 
 
 class AnalystSubscriptionService:
@@ -106,8 +106,52 @@ class AnalystSubscriptionService:
                     break
         return matched, scanned_cursor, self._repository().current_cursor() > scanned_cursor
 
+    def finalize_success(self, operation_key: str) -> Dict:
+        with self._transaction() as repos:
+            operation = repos.delivery_operations.get_operation(operation_key)
+            if not operation or operation["operation_type"] != "analyst_subscription":
+                raise NotFoundError("订阅交付操作不存在")
+            metadata = operation["metadata"]
+            plan = repos.delivery_operations.plan_for_operation(operation_key)
+            if plan and plan["finalized_at"]:
+                return plan["result"]
+            if operation["status"] != DELIVERY_OPERATION_STATUS_SENT:
+                return {"status": operation["status"]}
+            if not repos.analyst_subscriptions.complete_batch(metadata["subscription_id"], metadata["cursor_from"], metadata["cursor_to"]):
+                raise ConflictError("订阅游标与原交付区间不一致，不能跳过未完成变更")
+            result = {"subscription_id": metadata["subscription_id"], "cursor": metadata["cursor_to"], "status": "sent"}
+            if plan:
+                repos.delivery_operations.finalize_plan(plan["plan_key"], result)
+            return result
+
+    async def _deliver_plan(self, plan: Dict) -> Dict:
+        outcome = (await self._delivery_operations.send_plan(plan))[0]
+        payload = plan["payload"]
+        if outcome["status"] == DELIVERY_OPERATION_STATUS_SENT:
+            self.finalize_success(outcome["operation_key"])
+        return {"subscription_id": plan["owner_id"], "cursor": payload["cursor"]["to"],
+                "change_count": len(payload["changes"]), "has_more": payload["cursor"]["has_more"],
+                "operation": outcome, "status": outcome["status"]}
+
+    @staticmethod
+    def _recover_legacy_batch(repos, subscription: Dict) -> Dict | None:
+        operation = repos.delivery_operations.legacy_subscription_operation(subscription['id'], subscription['cursor'])
+        if not operation:
+            return None
+        parts = repos.delivery_execution.list_parts(operation['id'])
+        if len(parts) != 1:
+            raise ConflictError('原订阅批次缺少完整 JSON 消息，不能按当前对象重建')
+        payload = json.loads(parts[0]['content'])
+        metadata = operation['metadata']
+        if payload['subscription']['id'] != subscription['id'] or payload['cursor']['from'] != metadata['cursor_from'] or payload['cursor']['to'] != metadata['cursor_to']:
+            raise ConflictError('原订阅消息与已保存游标区间不一致')
+        return repos.delivery_operations.create_plan(operation['operation_key'], 'analyst_subscription', subscription['id'], payload, [operation['operation_key']])
+
     async def deliver(self, subscription_id: int | None = None) -> Dict:
-        subscriptions = self._repository().list_subscriptions(enabled_only=True)
+        active = self._delivery_operations.active_plans("analyst_subscription")
+        active_ids = {plan["owner_id"] for plan in active}
+        subscriptions = [item for item in self._repository().list_subscriptions()
+                         if item["enabled"] or item["id"] in active_ids]
         if subscription_id is not None:
             subscriptions = [item for item in subscriptions if int(item["id"]) == subscription_id]
             if not subscriptions:
@@ -115,37 +159,38 @@ class AnalystSubscriptionService:
         results = []
         for subscription in subscriptions:
             try:
-                changes, scanned_cursor, has_more = self._collect(subscription)
-                start_cursor = int(subscription["cursor"])
-                if scanned_cursor == start_cursor:
-                    results.append({"subscription_id": subscription["id"], "status": "idle", "cursor": start_cursor})
-                    continue
-                if not changes:
-                    self._repository().advance_cursor(subscription["id"], scanned_cursor, False)
-                    results.append({"subscription_id": subscription["id"], "status": "filtered", "cursor": scanned_cursor, "has_more": has_more})
-                    continue
-                payload = {
-                    # Existing consumers rely on this stable Webhook event type.
-                    "event": "ainews.analyst.changes",
-                    "schema_version": 1,
-                    "subscription": {"id": subscription["id"], "name": subscription["name"]},
-                    "cursor": {"from": start_cursor, "to": scanned_cursor, "has_more": has_more},
-                    "changes": changes,
-                }
-                operation_key = f"analyst-subscription:{subscription['id']}:{start_cursor}-{scanned_cursor}"
-                self._delivery_operations.prepare(
-                    operation_key,
-                    "analyst_subscription",
-                    None,
-                    [json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)],
-                    [],
-                    {"subscription_id": subscription["id"], "cursor_from": start_cursor, "cursor_to": scanned_cursor},
-                    channel_slug=subscription["channel_slug"],
-                )
-                outcome = await self._delivery_operations.send(operation_key)
-                if outcome["status"] == DELIVERY_OPERATION_STATUS_SENT:
-                    self._repository().advance_cursor(subscription["id"], scanned_cursor, True)
-                results.append({"subscription_id": subscription["id"], "cursor": scanned_cursor, "change_count": len(changes), "has_more": has_more, "operation": outcome, "status": outcome["status"]})
+                with self._transaction() as repos:
+                    # All readers and acceptors use the same write transaction;
+                    # another worker cannot accept a later batch before this one.
+                    pending = self._delivery_operations.active_plans("analyst_subscription", subscription["id"])
+                    if pending:
+                        frozen = pending[0]
+                    else:
+                        current = self._repository().get_subscription(subscription["id"])
+                        frozen = self._recover_legacy_batch(repos, current)
+                    if not frozen:
+                        changes, scanned_cursor, has_more = self._collect(current)
+                        start_cursor = int(current["cursor"])
+                        if scanned_cursor == start_cursor:
+                            results.append({"subscription_id": subscription["id"], "status": "idle", "cursor": start_cursor})
+                            continue
+                        if not changes:
+                            self._repository().advance_cursor(subscription["id"], scanned_cursor, False)
+                            results.append({"subscription_id": subscription["id"], "status": "filtered", "cursor": scanned_cursor, "has_more": has_more})
+                            continue
+                        payload = {
+                            "event": "ainews.analyst.changes", "schema_version": 1,
+                            "subscription": {"id": subscription["id"], "name": current["name"]},
+                            "cursor": {"from": start_cursor, "to": scanned_cursor, "has_more": has_more},
+                            "changes": changes,
+                        }
+                        operation_key = f"analyst-subscription:{subscription['id']}:{start_cursor}-{scanned_cursor}"
+                        frozen = self._delivery_operations.accept_plan(operation_key, "analyst_subscription", subscription["id"], payload, [{
+                            "operation_key": operation_key, "channel_slug": current["channel_slug"],
+                            "messages": [json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)],
+                            "metadata": {"subscription_id": subscription["id"], "cursor_from": start_cursor, "cursor_to": scanned_cursor},
+                        }])
+                results.append(await self._deliver_plan(frozen))
             except Exception as exc:
                 results.append({"subscription_id": subscription["id"], "status": "failed", "error": str(exc)})
         return {"subscriptions": len(subscriptions), "results": results}

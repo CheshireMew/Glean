@@ -43,6 +43,8 @@ def scraper_status_handler(ctx, args, payload):
         return {
             **runtime.get_scraper_state(args.name),
             **runtime.get_scraper_config(args.name, definition),
+            **runtime.get_source_cooldown(args.name, definition),
+            "configuration_error": runtime.get_configuration_error(args.name, definition),
         }
     return runtime.get_spider_status()
 

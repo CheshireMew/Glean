@@ -4,13 +4,13 @@
 
 ## 项目概述
 
-Glean 是一个信息筛选、事件追踪与发布系统，当前内置来源以加密行业为主，负责：
+Glean 是一个信息筛选、事件追踪与发布系统，内置 RSS、浏览器与公众号采集能力，负责：
 
 - 多来源抓取新闻和文章
 - 将原始内容写入采集池
 - 将多来源报道聚合为可追溯事件并执行黑名单拦截
 - 按内容档案审核，入选后根据全部来源做引用受限的补充
-- 对精选内容做公开展示、人工导出和 Telegram 分发
+- 对精选内容做公开展示、人工导出和多渠道分发，管理更正、预警和分析师变更订阅
 
 ## 技术栈
 
@@ -47,7 +47,7 @@ Glean 是一个信息筛选、事件追踪与发布系统，当前内置来源�
 - `scraper_impl`: 各站点解析器与 HTTP/RSS/Browser 传输实现
 - `event_clustering.py`: 跨来源事件匹配
 - `repository_impl`: 表级仓储
-- `sqlite/sqlite_schema.py`: schema 唯一来源
+- `sqlite/sqlite_schema.py` 及注册的专属 schema 模块: 由迁移注册表统一调用的数据库结构定义
 - `sqlite/sqlite_migration_plan.py`: 有序、追加式迁移注册表
 - `sqlite/sqlite_migrations.py`: 历史兼容转换，只由迁移计划的基线步骤调用
 
@@ -73,6 +73,8 @@ Glean 是一个信息筛选、事件追踪与发布系统，当前内置来源�
 - 用途: 保存每家媒体的原始抓取结果
 - 核心状态: `stage = incoming`
 - 每个来源通过 `event_id` 加入 `content_events`，来源关系保存在 `event_sources`
+- `source_identity` 和 `news_source_identities` 共用采集器的媒体身份规则；入库通过持久身份约束去重，保留原始 `source_url`。历史别名记录和关联不会被迁移删除。
+- 事件聚合先检查主体、对象、方向、计划／完成状态、否定和关键数值是否冲突，再计算标题相似度。小数与数量单位精确归一化，同义词按最长匹配和英文单词边界替换；批内、历史匹配与相似度检测共用这些规则，并纳入非主来源的事实约束。
 
 ### 归档池
 
@@ -106,12 +108,24 @@ Glean 是一个信息筛选、事件追踪与发布系统，当前内置来源�
 - `delivery_operations` / `delivery_parts` / `delivery_operation_entries`: 幂等发送操作、消息分片和覆盖内容
 - `scraper_runtime_state` / `scraper_runtime_commands` / `runtime_leases`: 采集状态、持久命令和 worker 独占租约
 - `schema_migrations`: 数据库结构版本
+- `delivery_plans`: 首次接受时固化的业务发送计划与完成结果
+- `publication_drafts` / `publication_draft_items`: 草稿及保留快照
+- `profile_publications` / `publication_channels` / `publication_targets`: 频道与渠道
+- `publication_corrections` / `analyst_subscriptions` / `analyst_change_log`: 更正与订阅变更
+
+### 服务所有权
+
+`ContentService` 负责查询与导出；`ContentLifecycleService` 负责删除与恢复，`ContentTransitionService` 负责聚合落库和黑名单转换。黑名单与外部调用密钥分别由 `BlacklistService`、`AnalystAccessService` 管理，项目没有 `ContentAdminService`。
+
+`EditorialWorkbenchService` 管理编辑版本和草稿规则；`EventIntelligenceService` 管理事件进展及来源归属。`PublicationWorkflowService` 接受完整发送计划，全部原始渠道送达后才发布报告、更正或标记内容已送达。`DeliveryOperationService` 只执行已保存消息并记录渠道结果；`DeliveryRetryService` 把完成结果交回对应业务所有者。`AnalystSubscriptionService` 从保存的批次恢复并原子推进游标，不能按后来修改的对象或筛选条件重建旧批次。
+
+清理会跳过未完成草稿或交付引用的内容；已发布和已取消草稿保存条目快照，源内容清理后仍可读取。预警先按启用、时间和渠道资格选候选，再按稳定顺序限制每批数量，避免不合格前批阻塞尾批；准备操作与匹配排队共用事务。
 
 ## 运行流程
 
 ### 自动流程
 
-应用启动后会有两个后台循环：
+worker 启动后持有独占租约，并运行以下任务：
 
 1. `scheduler_loop`
    负责按配置调度爬虫。
@@ -122,7 +136,9 @@ Glean 是一个信息筛选、事件追踪与发布系统，当前内置来源�
    - 来源事件聚合
    - 归档池黑名单拦截
    - 分档案 AI 审核和二次补充
-   - 定时日报与 Telegram 实时发送
+   - 按发布频道和目标运行实时内容、定时稿件与预警，并交付分析师变更订阅
+
+此外，`scraper_command_loop` 消费持久采集命令，`worker_heartbeat_loop` 刷新实例租约，`maintenance_loop` 按保留策略维护数据库。
 
 API 与 worker 分进程运行。worker 必须持有持续刷新的唯一数据库租约；重启时会回收已过期命令并结束被中断的运行。`/health/ready` 检查 API 数据库依赖，`/health/pipeline` 再检查 worker 心跳。
 
@@ -133,7 +149,7 @@ API 与 worker 分进程运行。worker 必须持有持续刷新的唯一数据�
 3. Blocklist 将命中项标记为 `blocked`
 4. AI 审核更新 `review_entries.review_status`，入选事件生成带来源引用的补充内容
 5. 到达设定时间后发送平衡日报，并写入 `daily_reports` 和 `daily_report_items`
-6. 默认内容档案中尚未发送的 `selected` 内容再走 Telegram 实时发送
+6. 配置实时投递目标的发布频道将尚未送达的 `selected` 内容发送到原目标集合；各目标全部完成后才收尾
 
 ## 后端接口概览
 
@@ -202,10 +218,10 @@ API 与 worker 分进程运行。worker 必须持有持续刷新的唯一数据�
 ### 公开前台
 
 - 文章流
-- 快讯流
-- 文章日报
-- 快讯日报
+- AI 资讯频道
 - 公开搜索
+
+当前页面的 `SHOW_SECONDARY_FEEDS = false` 暂时隐藏快讯流和两类日报入口。后端快讯、日报接口和对应组件保留；不能把接口存在视为这些入口当前可见。
 
 ### 后台标签页
 
@@ -219,12 +235,18 @@ API 与 worker 分进程运行。worker 必须持有持续刷新的唯一数据�
 - 爬虫控制
 - 系统配置
 - 结果输出
+- 公众号采集
+- AI 质量
+- 发布中心
+- 情报目录
+- 来源运营
 
 ## 维护约束
 
 - 新代码不得再引入并行旧模型或额外的兼容层
-- 数据库结构变更必须以 `sqlite_schema.py` 和 `sqlite_migration_plan.py` 的追加式迁移链为准
+- 数据库结构变更必须通过 `sqlite_migration_plan.py` 注册追加式迁移，结构模块只由正式创建或升级入口调用
 - JSON 接口的成功响应必须使用具体 `APIEnvelope[T]` DTO；前端请求的 method/path 以 `frontend/src/api/operations.json` 为机器可检查的消费者契约
 - 前后端内容状态只能使用 `shared/content_contract.py` 中的规范名
 - 数据库升级必须保留迁移前快照并在失败时回滚
 - Telegram 只有在全部持久化分片明确成功后才能更新内容和日报发送状态
+- 多渠道业务只能在冻结计划内全部原始目标送达后完成；失败和结果不确定的渠道需明确恢复，已送达分片不重放

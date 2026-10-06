@@ -224,3 +224,11 @@ class ReviewRepository(BaseRepository):
             f"UPDATE {REVIEW_TABLE} SET delivery_status = ?, delivered_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
             tuple([DELIVERY_STATUS_SENT, *entry_ids]),
         )
+
+    def mark_delivered_versions(self, entries: List[Dict]) -> None:
+        for entry in entries:
+            self.execute(
+                f"UPDATE {REVIEW_TABLE} SET delivery_status = ?, delivered_at = CURRENT_TIMESTAMP "
+                "WHERE id = ? AND editorial_version = ?",
+                (DELIVERY_STATUS_SENT, entry['id'], int(entry.get('editorial_version') or 0)),
+            )

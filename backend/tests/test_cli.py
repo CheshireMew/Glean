@@ -20,6 +20,7 @@ from backend.app.infrastructure.event_clustering import EventCluster, EventMembe
 from backend.app.infrastructure.database import database
 from backend.app.infrastructure.repositories import repositories
 from backend.app.infrastructure.sqlite.sqlite_migration_plan import WORKER_RUNTIME_VERSION
+from backend.app.infrastructure.scraper_impl.blockbeats import BlockBeatsScraper
 from backend.cli.app import main as cli_main
 from backend.cli.errors import (
     CLIConflictError,
@@ -249,6 +250,23 @@ class CLITest(unittest.TestCase):
         code, result, _ = self._run("scraper", "run", name, "--items", "1")
         self.assertEqual(code, 5)
         self.assertEqual(result["error"]["type"], "ServiceUnavailableError")
+
+    def test_missing_media_key_in_api_mode_is_visible_in_status_and_rejects_run(self):
+        self._init()
+        self.assertTrue(repositories().runtime_leases.acquire(
+            'worker', 'cli-media-key-test', 60,
+            owner_version=app_services.scraper_commands._expected_worker_version,
+            runtime_status='ready',
+        ))
+        with patch.object(BlockBeatsScraper, 'transport_kind', 'api'), patch.object(settings, 'BLOCKBEATS_API_KEY', ''):
+            code, status, _ = self._run('scraper', 'status', 'blockbeats')
+            self.assertEqual(code, 0, status)
+            self.assertIn('BLOCKBEATS_API_KEY', status['data']['configuration_error'])
+            code, result, _ = self._run('scraper', 'run', 'blockbeats', '--items', '1')
+            self.assertEqual(code, 5, result)
+            self.assertEqual(result['error']['type'], 'ConfigurationError')
+            self.assertIn('BLOCKBEATS_API_KEY', result['message'])
+        self.assertFalse(repositories().scraper_commands.has_pending_command('blockbeats', 'run'))
 
     def test_business_prints_are_isolated_from_json_stdout(self):
         def noisy_handler(ctx, args, payload):

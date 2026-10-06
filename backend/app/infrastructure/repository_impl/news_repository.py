@@ -7,6 +7,7 @@ from shared.content_contract import ARCHIVED_STAGE, INCOMING_STAGE
 from .base_repository import BaseRepository
 from ..lease_fencing import assert_current_operation_lease
 from ...core.time import format_utc_time, normalize_source_time
+from ...domain.source_identity import source_identity
 
 
 class NewsRepository(BaseRepository):
@@ -24,14 +25,15 @@ class NewsRepository(BaseRepository):
             """
             INSERT OR IGNORE INTO news (
                 title, content, source_site, source_url, published_at, scraped_at,
-                is_marked_important, site_importance_flag, stage, type, author
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_marked_important, site_importance_flag, stage, type, author, source_identity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 news_data["title"], news_data.get("content", ""), news_data["source_site"],
                 news_data["url"], normalize_source_time(news_data["published_at"]), scraped_at,
                 news_data.get("is_marked_important", False), news_data.get("site_importance_flag", ""),
                 INCOMING_STAGE, news_data.get("type", "news"), news_data.get("author", ""),
+                source_identity(news_data['url']),
             ),
         )
         return int(cursor.lastrowid) if cursor.rowcount > 0 and cursor.lastrowid is not None else None
@@ -58,6 +60,7 @@ class NewsRepository(BaseRepository):
                     INCOMING_STAGE,
                     item.get("type", "news"),
                     item.get("author", ""),
+                    source_identity(item['url']),
                 )
             )
 
@@ -68,17 +71,17 @@ class NewsRepository(BaseRepository):
             if not conn.in_transaction:
                 conn.execute("BEGIN IMMEDIATE")
                 started_transaction = True
-            before = conn.total_changes
-            conn.executemany(
+            cursor = conn.executemany(
                 """
                 INSERT OR IGNORE INTO news (
                     title, content, source_site, source_url, published_at, scraped_at,
-                    is_marked_important, site_importance_flag, stage, type, author
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_marked_important, site_importance_flag, stage, type, author, source_identity
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )
-            inserted = conn.total_changes - before
+            # Count news inserts, excluding identity and public-revision triggers.
+            inserted = cursor.rowcount
             if started_transaction:
                 assert_current_operation_lease(conn)
                 conn.commit()
@@ -92,6 +95,8 @@ class NewsRepository(BaseRepository):
                 conn.close()
 
     def update_news(self, news_id: int, updates: Dict):
+        if 'source_url' in updates:
+            updates = dict(updates, source_identity=source_identity(updates['source_url']))
         if "content" in updates and updates["content"]:
             updates["content"] = self._normalize_news_content(updates["content"])
         set_clause = ", ".join([f"{key} = ?" for key in updates.keys()])

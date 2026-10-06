@@ -138,6 +138,9 @@ class BaseScraper(ABC):
         self.used_result_buffer = True
         return ScraperResultBuffer(self)
 
+    def configuration_error(self) -> str | None:
+        return None
+
     def create_candidate_collector(self) -> ScrapeCandidateCollector:
         return ScrapeCandidateCollector(self)
 
@@ -233,6 +236,8 @@ class BaseScraper(ABC):
             yield page
         finally:
             try:
+                from .browser_runtime import cancel_page_requests
+                await cancel_page_requests(self, page)
                 await page.close()
             except Exception:
                 logger.exception("%s 详情页资源清理失败: %s", self.site_name, url)

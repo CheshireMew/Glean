@@ -39,10 +39,10 @@ class PerformanceRegressionTest(unittest.TestCase):
         rows = [
             {
                 "id": index,
-                "title": f"OpenAI 发布 GPT-9 模型，参数规模 9000 亿 第{index}版",
+                "title": "OpenAI 发布 GPT-9 模型，参数规模 9000 亿",
                 "source_site": f"source-{index % 7}",
                 "published_at": "2026-08-24 10:00:00",
-                "content": "",
+                "content": f"来源报道 {index}",
             }
             for index in range(1, 1001)
         ]
@@ -377,6 +377,10 @@ class ScraperPerformanceRegressionTest(unittest.IsolatedAsyncioTestCase):
 
         def require_scraper(self, _name):
             return self.definition
+
+        @staticmethod
+        def get_configuration_error(_name):
+            return None
 
         @staticmethod
         def get_source_cooldown(_name):

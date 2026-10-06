@@ -59,7 +59,7 @@ class EventClusteringService:
             "news_2": news_2,
             "similarity": round(similarity, 4),
             "threshold": clusterer.similarity_threshold,
-            "is_same_event": similarity >= clusterer.similarity_threshold,
+            "is_same_event": clusterer.is_same_event(news_1["title"], news_2["title"]),
         }
 
     async def auto_cluster_content(self, content_kind: str = "news"):

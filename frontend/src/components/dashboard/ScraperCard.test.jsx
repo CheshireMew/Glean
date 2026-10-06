@@ -24,6 +24,24 @@ vi.mock('antd', () => {
 })
 
 describe('ScraperCard', () => {
+  it('shows missing configuration and prevents an invalid run', () => {
+    const onRun = vi.fn()
+    const props = {
+      name: 'blockbeats', displayName: '律动', contentKind: 'news',
+      status: { status: 'idle', interval: 60, limit: 5, logs: [], configuration_error: '请配置律动 API Key' },
+      onRun, onCancel: vi.fn(), onConfigChange: vi.fn(),
+    }
+    const { rerender } = render(<ScraperCard {...props} />)
+    expect(screen.getByText('待配置')).toBeInTheDocument()
+    expect(screen.getByText('请配置律动 API Key')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '运行' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '运行' }))
+    expect(onRun).not.toHaveBeenCalled()
+    rerender(<ScraperCard {...props} status={{ ...props.status, configuration_error: null }} />)
+    expect(screen.getByText('就绪')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '运行' })).toBeEnabled()
+  })
+
   it('shows the cooldown and prevents manual requests during it', () => {
     const onRun = vi.fn()
     render(<ScraperCard name="odaily" displayName="Odaily" contentKind="news"

@@ -17,6 +17,59 @@ from .base_repository import BaseRepository
 
 class DeliveryOperationRepository(BaseRepository):
     """Owns delivery-operation identity, immutable plans, entry references and leases."""
+    @staticmethod
+    def _hydrate_plan(row) -> Dict | None:
+        if not row:
+            return None
+        plan = dict(row)
+        plan['payload'] = json.loads(plan.pop('payload_json'))
+        plan['operation_keys'] = json.loads(plan.pop('operation_keys_json'))
+        plan['result'] = json.loads(plan.pop('result_json') or 'null')
+        return plan
+
+    def get_plan(self, plan_key: str) -> Dict | None:
+        return self._hydrate_plan(self.execute(
+            'SELECT * FROM delivery_plans WHERE plan_key=?', (plan_key,),
+        ).fetchone())
+
+    def create_plan(self, plan_key: str, operation_type: str, owner_id: int, payload: Dict, operation_keys: list[str]) -> Dict:
+        self.execute('''
+            INSERT INTO delivery_plans(plan_key, operation_type, owner_id, payload_json, operation_keys_json)
+            VALUES (?, ?, ?, ?, ?) ON CONFLICT(plan_key) DO NOTHING
+        ''', (plan_key, operation_type, owner_id, json.dumps(payload, ensure_ascii=False, default=str), json.dumps(operation_keys)))
+        return self.get_plan(plan_key)
+
+    def active_plans(self, operation_type: str, owner_id: int | None = None) -> list[Dict]:
+        owner_where = ' AND owner_id=?' if owner_id is not None else ''
+        params = (operation_type, owner_id) if owner_id is not None else (operation_type,)
+        return [self._hydrate_plan(row) for row in self.execute(
+            f'SELECT * FROM delivery_plans WHERE operation_type=? AND finalized_at IS NULL{owner_where} ORDER BY created_at, plan_key', params,
+        ).fetchall()]
+
+    def plan_for_operation(self, operation_key: str) -> Dict | None:
+        return self._hydrate_plan(self.execute('''
+            SELECT p.* FROM delivery_plans p, json_each(p.operation_keys_json) k
+            WHERE k.value=? LIMIT 1
+        ''', (operation_key,)).fetchone())
+
+    def legacy_subscription_operation(self, subscription_id: int, cursor: int) -> Dict | None:
+        return self._hydrate_operation(self.execute('''
+            SELECT d.* FROM delivery_operations d
+            WHERE operation_type='analyst_subscription'
+              AND json_extract(metadata, '$.subscription_id')=?
+              AND json_extract(metadata, '$.cursor_from')=?
+              AND NOT EXISTS (
+                  SELECT 1 FROM delivery_plans p, json_each(p.operation_keys_json) k
+                  WHERE k.value=d.operation_key
+              ) ORDER BY id LIMIT 1
+        ''', (subscription_id, cursor)).fetchone())
+
+    def finalize_plan(self, plan_key: str, result: Dict) -> None:
+        self.execute('''
+            UPDATE delivery_plans SET finalized_at=CURRENT_TIMESTAMP, result_json=?
+            WHERE plan_key=? AND finalized_at IS NULL
+        ''', (json.dumps(result, ensure_ascii=False, default=str), plan_key))
+
     def create_operation(
         self,
         operation_key: str,

@@ -18,8 +18,14 @@ const STATUS_LABELS = {
 const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, onConfigChange }) => {
     const isRunning = status.status === 'running';
     const isBusy = status.status === 'queued' || isRunning;
+    const needsConfiguration = Boolean(status.configuration_error);
     const [clock, setClock] = useState(() => Date.now());
     const coolingDown = Boolean(status.cooldown_until && status.cooldown_until * 1000 > clock);
+    const needsConfigurationBadge = needsConfiguration && !isBusy;
+    const statusColor = needsConfigurationBadge || coolingDown ? 'warning'
+        : isRunning ? 'processing' : status.status === 'error' ? 'error' : 'success';
+    const statusLabel = needsConfigurationBadge ? '待配置'
+        : coolingDown ? '冷却中' : STATUS_LABELS[status.status] || '状态未知';
     useEffect(() => {
         const delay = Math.min(2147483647, Math.max(0, (status.cooldown_until || 0) * 1000 - Date.now() + 1));
         const timer = setTimeout(() => setClock(Date.now()), delay);
@@ -85,7 +91,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
         <Col xs={24} md={12} xl={8}>
             <Card
                 title={displayName}
-                extra={<Tag color={coolingDown ? 'warning' : (isRunning ? 'processing' : (status.status === 'error' ? 'error' : 'success'))}>{coolingDown ? '冷却中' : STATUS_LABELS[status.status] || '状态未知'}</Tag>}
+                extra={<Tag color={statusColor}>{statusLabel}</Tag>}
             >
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
                     <span style={{ fontSize: 12 }}>限制条数:</span>
@@ -155,7 +161,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                             size="small"
                             icon={<PlayCircleOutlined />}
                             loading={isBusy}
-                            disabled={coolingDown}
+                            disabled={coolingDown || needsConfiguration}
                             onClick={() => onRun(name, localLimit)}
                         >
                             运行
@@ -167,6 +173,7 @@ const ScraperCard = ({ name, displayName, contentKind, status, onRun, onCancel, 
                     {status.refresh_on_view ? '随 AI 资讯页面自动更新，同一来源 5 分钟内复用结果，不受定时采集总开关影响。' : '自动采集还需在系统设置中开启总开关。选择“仅手动”会停止本来源的自动采集。'}
                 </p>
                 {coolingDown && <p style={{ fontSize: 12, color: '#ad6800' }}>{status.cooldown_reason}</p>}
+                {needsConfiguration && <p style={{ fontSize: 12, color: '#ad6800' }}>{status.configuration_error}</p>}
 
                 <div
                     ref={logContainerRef}

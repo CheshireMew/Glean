@@ -8,6 +8,7 @@ from typing import Callable, Dict
 import uuid
 
 from ..core.task_output import capture_task_output
+from ..core.exceptions import ConfigurationError
 from ..domain.ai_sources import AI_SOURCES
 
 logger = getLogger("uvicorn")
@@ -60,6 +61,9 @@ class ScraperRunService:
             raise RuntimeError("scraper run service 尚未绑定 worker")
         self._runtime_state.ensure_runtime_initialized()
         self._runtime_state.require_scraper(name)
+        configuration_error = self._runtime_state.get_configuration_error(name)
+        if configuration_error:
+            raise ConfigurationError(configuration_error)
         if self._runtime_state.get_source_cooldown(name):
             return False
         if not self.source_enabled(name) or (should_continue is not None and not should_continue()):

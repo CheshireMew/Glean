@@ -348,6 +348,7 @@ class ScraperRuntimeData(ExtensibleResponse):
     interval: int | None = None
     cooldown_until: float | None = None
     cooldown_reason: str | None = None
+    configuration_error: str | None = None
 
 
 class ScraperCommandData(ExtensibleResponse):

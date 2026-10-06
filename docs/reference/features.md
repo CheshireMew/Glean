@@ -12,9 +12,8 @@
 ### 内容流
 
 - 文章流: `stream=longform`
-- 快讯流: `stream=briefs`
-- 文章日报
-- 快讯日报
+- AI 资讯频道
+- 后端仍提供快讯流 `stream=briefs`、文章日报和快讯日报；公开页面目前通过 `SHOW_SECONDARY_FEEDS = false` 隐藏这些入口，相关数据和组件保留。
 - 公开搜索
 
 ### 主要行为
@@ -22,10 +21,9 @@
 - 顶部搜索
 - 深浅色切换
 - 无限滚动加载
-- 日报弹窗查看
-- 侧栏快讯同步展示
-- 内容流、日报和搜索失败时显示原因与重试入口
-- 移动端搜索入口、键盘可操作标签页和带焦点约束的日报对话框
+- 内容流和搜索失败时显示原因与重试入口
+- 自动刷新保留已加载深度，并与加载更多协调；刷新失败保留上次成功列表
+- 移动端搜索入口、键盘可操作频道切换
 
 ## 后台
 
@@ -72,6 +70,30 @@
    文件: `frontend/src/components/dashboard/SelectedContentTab.jsx`
    能力: 列表、搜索、按来源筛选、删除、加入输出
 
+10. 爬虫控制
+    文件: `frontend/src/components/dashboard/SpiderControlTab.jsx`
+    能力: 运行与取消采集、调度配置、RSS 来源管理和真实错误查看
+
+11. 公众号采集
+    文件: `frontend/src/components/dashboard/WechatSourceManager.jsx`
+    能力: 微信登录状态、公众号订阅、文章采集及来源配置
+
+12. AI 质量
+    文件: `frontend/src/components/dashboard/AiQualityTab.jsx`
+    能力: AI 调用记录、质量指标、费用与预算、失败查看
+
+13. 发布中心
+    文件: `frontend/src/components/dashboard/PublicationCenterTab.jsx`
+    能力: 频道与多渠道目标、草稿编排和预览、网站发布、外部投递、更正及分析师变更订阅；未送达渠道显示状态并提供针对原操作的恢复入口
+
+14. 情报目录
+    文件: `frontend/src/components/dashboard/IntelligenceCenterTab.jsx`
+    能力: 实体、叙事、关注列表、预警策略和匹配、市场标的；事件详情可编辑进展并查看来源
+
+15. 来源运营
+    文件: `frontend/src/components/dashboard/SourceOperationsTab.jsx`
+    能力: 来源档案、健康快照、完整性与入选质量、异常处理
+
 ### 共享前端基础
 
 - API 封装: `frontend/src/api/*.js`
@@ -93,19 +115,37 @@
 - `backend/app/routers/news.py`
 - `backend/app/routers/config.py`
 - `backend/app/routers/pipeline.py`
+- `backend/app/routers/editorial.py`
+- `backend/app/routers/publications.py`
+- `backend/app/routers/delivery.py`
+- `backend/app/routers/intelligence.py`
+- `backend/app/routers/market_intelligence.py`
+- `backend/app/routers/source_operations.py`
+- `backend/app/routers/ai_quality.py`
+- `backend/app/routers/wechat.py`
+- `backend/app/routers/public_content.py`
+- `backend/app/routers/spiders.py`
+- `backend/app/routers/integrations.py`
 
 ### 服务模块
 
 - `content_service`: 内容查询、后台列表和导出
 - `public_content_service`: 默认内容档案的公开流、日报、搜索和 RSS
-- `content_admin_service`: 黑名单和外部调用密钥
+- `content_lifecycle_service` / `content_transition_service`: 内容删除、恢复和状态转换；未完成稿件或交付引用的内容返回业务冲突
+- `blacklist_service` / `analyst_access_service`: 黑名单和外部调用密钥
 - `event_clustering_service`: 事件聚合、事件相似度检测和自动聚合
 - `ai_pipeline_service`: 多端点容错审核、失败隔离和入选后二次补充
 - `scraper_run_service` / `scraper_schedule_service`: 爬虫执行与调度
 - `scraper_runtime_state_service`: 爬虫状态
 - `daily_report_service`: 日报平衡编排、选入明细和成功发布落库
 - `telegram_delivery_service`: 实时发送与日报投递
-- `delivery_operation_service`: Telegram 分片、幂等键、未知结果确认与断点续发
+- `delivery_operation_service`: 多渠道消息快照、分片、幂等键、执行租约和原计划续发
+- `delivery_retry_service`: 按原操作类型交回业务所有者收尾，未知结果须核对后明确重试
+- `publication_workflow_service`: 草稿、实时发布、更正和预警的冻结计划与成组收尾
+- `editorial_workbench_service` / `event_intelligence_service`: 编辑版本、草稿校验、事件进展与来源归属
+- `analyst_subscription_service`: 冻结 Webhook 变更批次、先恢复原批次再继续扫描、单调推进游标
+- `ai_quality_service` / `source_operations_service`: AI 质量记录和来源健康运营
+- `wechat_source_service`: 公众号采集管理
 - `runtime_health_service`: 分离 API 就绪检查与流水线 worker 就绪检查
 - `automation_settings_service` 等配置服务: 分领域读写系统配置
 - `auth_service`: 登录和令牌验证
@@ -124,13 +164,18 @@
 - `keyword_blacklist`: 黑名单
 - `push_logs`: 发送日志
 - `delivery_operations` / `delivery_parts` / `delivery_operation_entries`: 带租约、类型化内容引用和消息快照的可恢复发送操作
+- `delivery_plans`: 原始内容、版本、渠道集合与业务收尾结果；仅所有原始目标送达后原子完成
+- `publication_drafts` / `publication_draft_items`: 草稿及条目；未完成草稿保护引用，已发布/取消条目保留快照并允许脱离被清理内容
+- `profile_publications` / `publication_channels` / `publication_targets`: 频道及多渠道投递目标
+- `publication_corrections` / `analyst_subscriptions` / `analyst_change_log`: 更正和游标订阅
+- `alert_policies` / `alert_matches`: 预警策略和逐条投递状态
 - `scraper_runtime_commands` / `runtime_leases`: 持久命令与 worker 独占租约
 
 ### 单一来源
 
 - 内容状态常量: `shared/content_contract.py`
-- SQLite schema: `backend/app/infrastructure/sqlite/sqlite_schema.py`
-- 旧表迁移: `backend/app/infrastructure/sqlite/sqlite_migrations.py`
+- SQLite 创建与升级入口: `backend/app/infrastructure/sqlite/sqlite_migration_plan.py`；基础表由 `sqlite_schema.py` 定义，各领域结构由注册的专属 schema 模块定义
+- 历史基线转换: `backend/app/infrastructure/sqlite/sqlite_migrations.py`
 
 ## 回归重点
 

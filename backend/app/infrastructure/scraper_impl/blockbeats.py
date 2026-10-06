@@ -1,124 +1,110 @@
-"""TheBlockBeats爬虫 - 使用样式检查"""
-from .base import BaseScraper
-from typing import List, Dict
-from datetime import datetime
+import re
+from urllib.parse import urlencode, urljoin, urlsplit
 
-class BlockBeatsScraper(BaseScraper):
+from bs4 import BeautifulSoup
+
+from ...core.config import settings
+from .media_feed import MediaApiScraper, media_identity
+
+
+class BlockBeatsScraper(MediaApiScraper):
+    source_name = 'blockbeats'
+    homepage = 'https://www.theblockbeats.info'
+    endpoint = 'https://api-pro.theblockbeats.info/v1/newsflash'
+    transport_kind = 'api' if settings.BLOCKBEATS_API_KEY else 'http'
+
     def __init__(self):
-        super().__init__(
-            site_name='blockbeats',
-            base_url='https://www.theblockbeats.info/newsflash'
-        )
-    
-    async def scrape_important_news(self) -> List[Dict]:
-        """抓取TheBlockBeats的重要新闻"""
-        await self.fetch_page_with_delay(self.base_url)
-        await self.page.wait_for_timeout(3000)
-        
-        # 点击"重要快讯"筛选
-        try:
-            important_checkbox = await self.page.query_selector('text=重要快讯')
-            if important_checkbox:
-                await self.page.evaluate("el => el.click()", important_checkbox)
-                await self.page.wait_for_timeout(2000)
-                print("[DEBUG] 已点击'只看精选'筛选")
-        except Exception as e:
-            print(f"点击筛选按钮失败: {e}")
-        
-        collector = self.create_candidate_collector()
-        news_list = collector.results
-        
-        # 获取所有新闻标题
-        title_elements = await self.page.query_selector_all('.news-flash-title')
-        print(f"[DEBUG] 找到 {len(title_elements)} 个新闻标题")
-        
-        for title_el in title_elements:
-            try:
-                # 检查是否有"first"徽章
-                container = await title_el.evaluate_handle('el => el.closest(".news-flash-wrapper")')
-                has_first_badge = await container.evaluate('''
-                    el => {
-                        return el.innerHTML.includes('first') || 
-                               el.querySelector('img[src*="first"]') !== null;
-                    }
-                ''') if container else False
-                
-                # 样式检查（通用方法）
-                style_check = await self.check_importance_by_style(title_el)
-                
-                # 只要满足任一条件即为重要
-                if not (has_first_badge or style_check['is_important']):
-                    continue
-                
-                # 提取信息
-                title_text = await self.safe_extract_text(title_el)
-                # 清理标题中的时间前缀 (e.g. "16:34 Some Title")
-                import re
-                title = re.sub(r'^\d{2}:\d{2}\s*', '', title_text).strip()
-                
-                url = await self.safe_get_attribute(title_el, 'href')
-                
-                if url and not url.startswith('http'):
-                    url = f"https://www.theblockbeats.info{url}"
+        super().__init__()
+        if self.transport_kind == 'http':
+            self.api_url = self.homepage + '/newsflash'
 
-                
-                # 提取时间 - BlockBeats的时间在标题文本开头（例如："08:31 新闻标题"）
-                time_match = re.match(r'^(\d{2}:\d{2})', title_text)
-                if time_match:
-                    time_str = time_match.group(1)
-                    # 解析为今天的时间
-                    now = datetime.now()
-                    hour, minute = map(int, time_str.split(':'))
-                    published_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                    
-                    # 如果解析出的时间在未来，说明是昨天的新闻
-                    if published_at > now:
-                        from datetime import timedelta
-                        published_at = published_at - timedelta(days=1)
-                    
-                    print(f"[DEBUG] 提取时间: {time_str} -> {published_at.strftime('%Y-%m-%d %H:%M:%S')}")
-                else:
-                    # 如果没有匹配到时间，使用当前时间
-                    print(f"[DEBUG] 未匹配到时间，title_text={title_text[:50]}")
-                    published_at = datetime.now()
-                
-                # 确定重要标识
-                if has_first_badge:
-                    importance_flag = 'first_badge'
-                else:
-                    importance_flag = style_check['style_flag']
-                
-                decision = collector.consider(title, url, published_at)
-                if decision == "skip":
+    def configuration_error(self):
+        if self.transport_kind == 'api' and not settings.BLOCKBEATS_API_KEY:
+            return f'律动采集需要 BLOCKBEATS_API_KEY；请在 .env.{settings.ENV} 或系统环境变量中配置后重启 API 和 worker'
+        return None
+
+    def prepare(self):
+        error = self.configuration_error()
+        if error:
+            raise RuntimeError(error)
+        self.api_key = settings.BLOCKBEATS_API_KEY
+
+    async def scrape_important_news(self):
+        if self.transport_kind == 'api':
+            return await super().scrape_important_news()
+        return self.select_new_items(self.parse_public_news(await self.fetch_text(self.api_url)))
+
+    def parse_public_news(self, html):
+        soup = BeautifulSoup(html, 'html.parser')
+        groups = soup.select('.flash-list')
+        if not groups or not soup.select('.flash-list .news-flash-wrapper'):
+            raise RuntimeError('律动公开快讯列表结构已变化')
+        items = []
+        for group in groups:
+            date = group.select_one('.flash-list-today')
+            day = date.get_text(strip=True) if date else ''
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day):
+                raise RuntimeError('律动公开快讯缺少日期')
+            for node in group.select('.news-flash-wrapper'):
+                link = node.select_one('a.news-flash-title[href]')
+                title = node.select_one('.news-flash-title-text')
+                if not link or not title:
+                    raise RuntimeError('律动公开快讯缺少标题或链接')
+                flags = []
+                # The site's template uses ios > 0 for this class and
+                # is_first == 1 for the first-published icon.
+                if 'news-flash-title-text-active' in title.get('class', []):
+                    flags.append('important')
+                if node.select_one('.home-first-png'):
+                    flags.append('first')
+                if not flags or node.select_one('.premium-unlock-btn'):
                     continue
-                if decision == "stop":
-                    break
-                
-                # 获取完整内容
-                content = ''
-                if url:
-                    # BlockBeats的内容选择器
-                    content_selectors = [
-                        '.flash-content',  # BlockBeats快讯内容（正确选择器）
-                        '.flash-content p',
-                        '.flash-detail-content',
-                        '.newsflash-content',
-                        '.detail-content',
-                    ]
-                    content = await self.fetch_full_content(url, content_selectors)
-                
-                collector.append_standard(
-                    title=title,
-                    content=content,
-                    url=url,
-                    published_at=published_at.strftime('%Y-%m-%d %H:%M:%S'),
-                    site_importance_flag=importance_flag,
-                )
-                print(f"[DEBUG] 添加重要新闻: {title[:30]}...")
-                
-            except Exception as e:
-                print(f"解析BlockBeats新闻项失败: {e}")
-                continue
-        
-        print(f"TheBlockBeats: 抓取到 {len(news_list)} 条重要新闻")
-        return news_list
+                url = urljoin(self.homepage, link['href'])
+                if urlsplit(url).hostname != 'www.theblockbeats.info' or not re.fullmatch(r'/flash/\d+', urlsplit(url).path):
+                    raise RuntimeError('律动公开快讯链接格式已变化')
+                clock = re.match(r'^(\d{1,2}:\d{2})\b', link.get_text(' ', strip=True))
+                content = node.select_one('.news-flash-item-content')
+                if not clock or content is None:
+                    raise RuntimeError('律动公开快讯缺少时间或正文节点')
+                items.append(self.make_item(
+                    title=title.get_text(' ', strip=True), content=str(content), url=media_identity(url),
+                    date=f'{day} {clock.group(1)}:00', importance_flag='+'.join(flags),
+                ))
+        return items
+
+    async def fetch_items_page(self, page):
+        self.prepare()
+        items = []
+        has_more = False
+        kinds = ('important', 'first') if self.news_type == 'news' else ('important',)
+        for kind in kinds:
+            url = self.api_url + '/' + kind + '?' + urlencode({'page': page, 'size': self.page_size, 'lang': 'cn'})
+            payload = await self.transport.fetch_json(url, headers={'api-key': self.api_key})
+            if not isinstance(payload, dict) or payload.get('status') != 0:
+                # Do not echo an arbitrary provider response that could contain credentials.
+                raise RuntimeError('律动 API 认证、额度或业务请求失败，请检查 Key 和官网额度')
+            data = payload.get('data')
+            if not isinstance(data, dict) or not isinstance(data.get('data'), list):
+                raise RuntimeError('律动 API 列表格式已变化')
+            rows = data['data']
+            if any(not isinstance(row, dict) for row in rows):
+                raise RuntimeError('律动 API 条目格式已变化')
+            items.extend(dict(row, _glean_kind=kind) for row in rows)
+            has_more = has_more or len(rows) >= self.page_size
+        # Merge important and first-published lists before applying the configured limit.
+        items.sort(key=lambda row: self.item_date(row), reverse=True)
+        return items, has_more
+
+    @staticmethod
+    def item_date(raw):
+        from .media_feed import published_at
+        return published_at(raw.get('create_time'))
+
+    def parse_item(self, raw):
+        url = raw.get('link')
+        if not url:
+            raise RuntimeError('律动 API 条目缺少站内链接')
+        return self.make_item(title=raw.get('title'), content=raw.get('content') or raw.get('description'),
+                              url=media_identity(url), date=raw.get('create_time'), author=raw.get('author'),
+                              content_is_html=bool(raw.get('content')),
+                              importance_flag=raw.get('_glean_kind', '') if self.news_type == 'news' else '')

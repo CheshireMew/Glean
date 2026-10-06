@@ -9,14 +9,17 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from backend.app.composition import app_services
 from backend.app.core.exceptions import ConflictError
+from backend.app.core.exceptions import ConfigurationError
+from backend.app.core.config import settings
 from backend.app.infrastructure.scraper_impl.source_access import source_access
-from backend.app.infrastructure.database import database, init_database
+from backend.app.infrastructure.database import database, db_connection, init_database
 from backend.app.infrastructure.repositories import repositories
 from backend.app.infrastructure.scraper_impl.base import BaseScraper, CANDIDATE_ACCEPT, CANDIDATE_SKIP
+from backend.app.infrastructure.scraper_impl.blockbeats import BlockBeatsScraper
 from backend.app.models.responses import ScraperConfigData, ScraperRuntimeData
 from backend.app.services.scraper_run_service import ScraperRunService
 from backend.app.services.scraper_schedule_service import ScraperScheduleService
@@ -144,6 +147,41 @@ class ScraperAutomationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status["cooldown_until"], error.until)
         self.assertIn("HTTP 429", status["cooldown_reason"])
 
+    async def test_missing_media_key_blocks_api_mode_but_not_http_articles(self):
+        commands = app_services.scraper_commands
+        repositories().runtime_leases.acquire("worker", "media-key-test", 60,
+            owner_version=commands._expected_worker_version, runtime_status="ready")
+        with patch.object(BlockBeatsScraper, 'transport_kind', 'api'), patch.object(settings, 'BLOCKBEATS_API_KEY', ''):
+            status = ScraperRuntimeData.model_validate(self.runtime.get_spider_status()['blockbeats']).model_dump()
+            self.assertIn('BLOCKBEATS_API_KEY', status['configuration_error'])
+            self.assertIsNone(self.runtime.get_spider_status()['blockbeats_article']['configuration_error'])
+            launcher = Mock()
+            launcher.available_launch_slots.return_value = 2
+            self.scheduler(launcher, ('blockbeats', 'blockbeats_article')).run_due_scrapers(lambda: True)
+            self.assertEqual([call.args[0] for call in launcher.launch_scraper.call_args_list], ['blockbeats_article'])
+            with self.assertRaisesRegex(ConfigurationError, 'BLOCKBEATS_API_KEY'):
+                await commands.request_run('blockbeats', 5)
+            with self.assertRaisesRegex(ConfigurationError, 'BLOCKBEATS_API_KEY'):
+                self.runs.launch_scraper('blockbeats', 5)
+            self.assertFalse(repositories().scraper_commands.has_pending_command('blockbeats', 'run'))
+            self.assertEqual(self.runtime.get_scraper_state('blockbeats')['status'], 'idle')
+        with patch.object(settings, 'BLOCKBEATS_API_KEY', 'test-only-key'):
+            self.assertIsNone(self.runtime.get_spider_status()['blockbeats']['configuration_error'])
+            accepted = await commands.request_run('blockbeats', 5)
+            self.assertEqual(accepted['status'], 'accepted')
+
+    async def test_blockbeats_http_without_key_is_ready_for_scheduler_and_manual_queue(self):
+        commands = app_services.scraper_commands
+        repositories().runtime_leases.acquire('worker', 'media-http-test', 60,
+            owner_version=commands._expected_worker_version, runtime_status='ready')
+        with patch.object(BlockBeatsScraper, 'transport_kind', 'http'), patch.object(settings, 'BLOCKBEATS_API_KEY', ''):
+            self.assertIsNone(self.runtime.get_spider_status()['blockbeats']['configuration_error'])
+            launcher = Mock()
+            launcher.available_launch_slots.return_value = 2
+            self.scheduler(launcher, ('blockbeats', 'blockbeats_article')).run_due_scrapers(lambda: True)
+            self.assertEqual([call.args[0] for call in launcher.launch_scraper.call_args_list], ['blockbeats', 'blockbeats_article'])
+            self.assertEqual((await commands.request_run('blockbeats', 5))['status'], 'accepted')
+
     def fake_scraper(self):
         started, finish, closed = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
@@ -203,6 +241,47 @@ class ScraperAutomationTest(unittest.IsolatedAsyncioTestCase):
         state = repositories().scraper_state.get_state("odaily")
         self.assertIn("Saved 1", state["last_result"])
         self.assertTrue(any("手动采集" in line for line in state["logs"]))
+
+    async def test_media_rss_and_api_run_through_worker_persistence_and_incremental_history(self):
+        for name in ('odaily', 'panews'):
+            with self.subTest(source=name):
+                definition = self.runtime.require_scraper(name)
+                url = f'https://example.test/{name}/1'
+                created = []
+
+                def build_scraper():
+                    scraper = definition.build_scraper()
+                    scraper.transport.start = AsyncMock()
+                    scraper.transport.close = AsyncMock()
+                    scraper.transport.fetch_json = AsyncMock(return_value={
+                        'code': 200, 'success': True, 'data': {'hasMore': False, 'list': [{
+                            'title': '真实快讯', 'content': '<p>真实正文</p>', 'link': url,
+                            'isImportant': True, 'publishTimestamp': 1791191803000,
+                        }]}})
+                    scraper.transport.fetch_text = AsyncMock(return_value=(
+                        '<rss version="2.0"><channel><item><title>真实快讯</title>'
+                        f'<link>{url}</link><description><![CDATA[<p>真实正文</p>]]></description>'
+                        '<pubDate>Mon, 05 Oct 2026 09:16:43 GMT</pubDate></item></channel></rss>'
+                    ))
+                    created.append(scraper)
+                    return scraper
+
+                with patch.object(self.runtime, 'require_scraper', return_value=SimpleNamespace(build_scraper=build_scraper)):
+                    for expected_count in (1, 0):
+                        self.assertTrue(self.runs.launch_scraper(name, 1))
+                        await self.runs._running_tasks[name]
+                        state = repositories().scraper_state.get_state(name)
+                        self.assertEqual(state['status'], 'idle')
+                        self.assertEqual(state['items_scraped'], expected_count)
+                        created[-1].transport.start.assert_awaited_once()
+                        created[-1].transport.close.assert_awaited_once()
+                with db_connection() as conn:
+                    stored = [tuple(row) for row in conn.execute(
+                        'SELECT source_site, type, content, published_at, is_marked_important FROM news WHERE source_url = ?',
+                        (url,),
+                    ).fetchall()]
+                self.assertEqual(stored, [(name, 'news', '真实正文', '2026-10-05 09:16:43', 1)])
+                self.assertTrue(created[-1].encountered_existing_items)
 
     async def test_stop_before_coroutine_starts_releases_claim(self):
         scraper, started, _, _ = self.fake_scraper()

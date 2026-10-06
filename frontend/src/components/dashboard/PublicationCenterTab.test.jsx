@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import client from '../../api/client';
 import PublicationCenterTab from './PublicationCenterTab';
 
@@ -32,6 +32,7 @@ beforeAll(() => {
 });
 
 afterAll(() => vi.unstubAllGlobals());
+beforeEach(() => vi.clearAllMocks());
 
 describe('website publication', () => {
     it('publishes a draft to the website without requesting external delivery', async () => {
@@ -56,5 +57,61 @@ describe('website publication', () => {
         const writes = client.request.mock.calls.map(([request]) => request).filter((request) => request.method === 'post');
         expect(writes).toHaveLength(1);
         expect(writes[0].params.website_only).toBe(true);
+    });
+});
+
+describe('correction delivery feedback', () => {
+    it('restores incomplete channel feedback when reopening the page', async () => {
+        client.request.mockImplementation(async ({ url }) => ({ data: url === '/editorial/corrections' ? [{
+            id: 4, correction_type: 'correction', message: 'Stored correction', published_at: null,
+            delivery: { status: 'publishing', operations: [{
+                operation_key: 'correction:4:channel-b', channel_slug: 'channel-b',
+                status: 'failed', sent_parts: 0, parts: 1, last_error: 'persisted error',
+            }] },
+        }] : [] }));
+        const first = render(<PublicationCenterTab />);
+        fireEvent.click(screen.getByRole('tab', { name: '更正' }));
+        expect(await screen.findByText('persisted error')).toBeInTheDocument();
+        first.unmount();
+        render(<PublicationCenterTab />);
+        fireEvent.click(screen.getByRole('tab', { name: '更正' }));
+        expect(await screen.findByText('更正尚未完整送达')).toBeInTheDocument();
+        expect(screen.getByText('persisted error')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '重试未完成部分' })).toBeInTheDocument();
+        expect(client.request.mock.calls.every(([request]) => request.method === 'get')).toBe(true);
+    });
+    it.each(['failed', 'needs_attention'])('shows %s channels and their recovery action after a successful HTTP response', async (status) => {
+        let recovered = false;
+        client.request.mockImplementation(async ({ method, url, data }) => {
+            if (method === 'post' && url === '/delivery/retry') {
+                expect(data.operation_key).toBe('correction:4:channel-b');
+                recovered = true;
+                return { data: { status: 'sent' } };
+            }
+            if (method === 'post' && url === '/editorial/corrections/4/publish') return { data: {
+                correction_id: 4, status: recovered ? 'published' : 'publishing', operations: [
+                    { operation_key: 'correction:4:channel-a', channel_slug: 'channel-a', status: 'sent', sent_parts: 1, parts: 1 },
+                    { operation_key: 'correction:4:channel-b', channel_slug: 'channel-b', status, sent_parts: 0, parts: 1, last_error: 'delivery error' },
+                ],
+            } };
+            if (url === '/editorial/corrections') return { data: [{ id: 4, correction_type: 'correction', message: 'Fix the fact', event_title: 'Test event', published_at: recovered ? '2026-10-05T00:00:00Z' : null }] };
+            return { data: [] };
+        });
+        render(<PublicationCenterTab />);
+        fireEvent.click(screen.getByRole('tab', { name: '更正' }));
+        fireEvent.click(await screen.findByRole('button', { name: '发送更正' }));
+        expect(await screen.findByText('更正尚未完整送达')).toBeInTheDocument();
+        expect(screen.queryByText('更正已发送')).not.toBeInTheDocument();
+        expect(screen.getByText('channel-a')).toBeInTheDocument();
+        expect(screen.getByText('channel-b')).toBeInTheDocument();
+        expect(screen.getByText('delivery error')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: status === 'failed' ? '重试未完成部分' : '核对后确认补发' }));
+        if (status === 'needs_attention') {
+            expect(client.request.mock.calls.some(([request]) => request.url === '/delivery/retry')).toBe(false);
+            fireEvent.click(await screen.findByRole('button', { name: '确认补发' }));
+        }
+        expect(await screen.findByText('已发布')).toBeInTheDocument();
+        expect(client.request.mock.calls.filter(([request]) => request.url === '/delivery/retry')).toHaveLength(1);
+        expect(screen.queryByText('更正尚未完整送达')).not.toBeInTheDocument();
     });
 });

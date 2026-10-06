@@ -31,6 +31,8 @@ from backend.app.infrastructure.sqlite.sqlite_migration_plan import (
     AUTH_VERSION,
     V2EX_VERSION,
     JUEJIN_WEEKLY_VERSION,
+    CURATED_RSS_VERSION,
+    DELIVERY_RETENTION_VERSION,
     LEGACY_BASELINE_VERSION,
     INTELLIGENCE_FOUNDATION_VERSION,
     INTELLIGENCE_WORKFLOWS_VERSION,
@@ -573,7 +575,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(database_touched)
 
     async def test_ordered_migration_registry_has_one_contiguous_current_step(self):
-        self.assertEqual(len(MIGRATION_STEPS), 11)
+        self.assertEqual(len(MIGRATION_STEPS), 13)
         self.assertEqual(MIGRATION_STEPS[0].from_version, LEGACY_BASELINE_VERSION)
         self.assertEqual(MIGRATION_STEPS[0].to_version, WORKER_RUNTIME_VERSION)
         self.assertEqual(MIGRATION_STEPS[1].from_version, WORKER_RUNTIME_VERSION)
@@ -595,7 +597,11 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(MIGRATION_STEPS[9].from_version, V2EX_VERSION)
         self.assertEqual(MIGRATION_STEPS[9].to_version, JUEJIN_WEEKLY_VERSION)
         self.assertEqual(MIGRATION_STEPS[10].from_version, JUEJIN_WEEKLY_VERSION)
-        self.assertEqual(MIGRATION_STEPS[10].to_version, SCHEMA_VERSION)
+        self.assertEqual(MIGRATION_STEPS[10].to_version, CURATED_RSS_VERSION)
+        self.assertEqual(MIGRATION_STEPS[11].from_version, CURATED_RSS_VERSION)
+        self.assertEqual(MIGRATION_STEPS[11].to_version, DELIVERY_RETENTION_VERSION)
+        self.assertEqual(MIGRATION_STEPS[12].from_version, DELIVERY_RETENTION_VERSION)
+        self.assertEqual(MIGRATION_STEPS[12].to_version, SCHEMA_VERSION)
 
         conn = database.connect()
         try:
@@ -634,7 +640,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
             conn.close()
         self.assertEqual(
             versions,
-            [LEGACY_BASELINE_VERSION, WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, INTELLIGENCE_WORKFLOWS_VERSION, AI_NEWS_SOURCES_VERSION, AI_TRANSLATIONS_VERSION, WECHAT_VERSION, AUTH_VERSION, V2EX_VERSION, JUEJIN_WEEKLY_VERSION, SCHEMA_VERSION],
+            [LEGACY_BASELINE_VERSION, WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, INTELLIGENCE_WORKFLOWS_VERSION, AI_NEWS_SOURCES_VERSION, AI_TRANSLATIONS_VERSION, WECHAT_VERSION, AUTH_VERSION, V2EX_VERSION, JUEJIN_WEEKLY_VERSION, CURATED_RSS_VERSION, DELIVERY_RETENTION_VERSION, SCHEMA_VERSION],
         )
         self.assertTrue({"owner_version", "runtime_status", "status_details"} <= columns)
 
@@ -706,7 +712,7 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
             conn.close()
         self.assertEqual(
             versions,
-            [WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, INTELLIGENCE_WORKFLOWS_VERSION, AI_NEWS_SOURCES_VERSION, AI_TRANSLATIONS_VERSION, WECHAT_VERSION, AUTH_VERSION, V2EX_VERSION, JUEJIN_WEEKLY_VERSION, SCHEMA_VERSION],
+            [WORKER_RUNTIME_VERSION, PERFORMANCE_SCHEMA_VERSION, INTELLIGENCE_FOUNDATION_VERSION, INTELLIGENCE_WORKFLOWS_VERSION, AI_NEWS_SOURCES_VERSION, AI_TRANSLATIONS_VERSION, WECHAT_VERSION, AUTH_VERSION, V2EX_VERSION, JUEJIN_WEEKLY_VERSION, CURATED_RSS_VERSION, DELIVERY_RETENTION_VERSION, SCHEMA_VERSION],
         )
         self.assertTrue(
             {

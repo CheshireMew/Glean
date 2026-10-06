@@ -137,3 +137,13 @@ class AnalystSubscriptionRepository(BaseRepository):
             (cursor, delivered, subscription_id, cursor),
         )
         return result.rowcount > 0
+
+    def complete_batch(self, subscription_id: int, cursor_from: int, cursor_to: int) -> bool:
+        result = self.execute('''
+            UPDATE analyst_subscriptions SET cursor=?, last_delivered_at=CURRENT_TIMESTAMP,
+                updated_at=CURRENT_TIMESTAMP WHERE id=? AND cursor=?
+        ''', (cursor_to, subscription_id, cursor_from))
+        if result.rowcount:
+            return True
+        current = self.get_subscription(subscription_id)
+        return bool(current and current['cursor'] >= cursor_to)

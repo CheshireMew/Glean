@@ -50,8 +50,18 @@ class EventIntelligenceService:
         payload = dict(values)
         if payload.get("occurred_at") is not None:
             payload["occurred_at"] = payload["occurred_at"].isoformat()
-        if not self._repository().update_event_update(update_id, payload, actor):
-            raise NotFoundError("事件进展不存在")
+        with self._transaction() as tx:
+            repo = tx.event_intelligence
+            update = repo.get_update(update_id)
+            if not update:
+                raise NotFoundError("事件进展不存在")
+            source_news_id = payload.get("source_news_id")
+            if source_news_id is not None:
+                detail = repo.get_detail(int(update["event_id"]))
+                if source_news_id not in {int(item["id"]) for item in detail["sources"]}:
+                    raise ValidationError("事件进展引用的来源不属于该事件")
+            if not repo.update_event_update(update_id, payload, actor):
+                raise NotFoundError("事件进展不存在或没有变化")
         return {"id": update_id, "updated": True}
 
     def add_fact(self, event_id: int, values: Dict, actor: str) -> Dict:

@@ -50,6 +50,9 @@ from .sqlite_support import version_key
 from .source_presets import seed_ai_rss_sources, seed_curated_rss_sources
 from .wechat_schema import create_wechat_schema
 from .auth_schema import create_auth_schema
+from .delivery_plan_schema import create_delivery_plan_schema
+from .editorial_retention_schema import migrate_draft_retention, create_delivery_and_retention_schema
+from .news_identity_schema import create_news_identity_schema
 
 
 LEGACY_BASELINE_VERSION = "2026.08.12.1"
@@ -63,7 +66,9 @@ WECHAT_VERSION = "2026.09.27.2"
 AUTH_VERSION = "2026.09.27.3"
 V2EX_VERSION = "2026.09.27.4"
 JUEJIN_WEEKLY_VERSION = "2026.09.27.5"
-SCHEMA_VERSION = "2026.10.03.1"
+CURATED_RSS_VERSION = "2026.10.03.1"
+DELIVERY_RETENTION_VERSION = "2026.10.05.1"
+SCHEMA_VERSION = "2026.10.06.1"
 
 
 @dataclass(frozen=True)
@@ -91,11 +96,13 @@ def _create_current_schema(cursor: sqlite3.Cursor) -> None:
     ensure_event_references(cursor)
     create_daily_reports_table(cursor)
     create_delivery_tables(cursor)
+    create_delivery_plan_schema(cursor)
     create_keyword_blacklist_table(cursor)
     normalize_domain_values(cursor)
     create_search_indexes(cursor)
     create_public_revision_tracking(cursor)
     create_intelligence_extension_schema(cursor)
+    migrate_draft_retention(cursor)
     create_domain_validation_triggers(cursor)
     migrate_legacy_config(cursor)
     seed_default_rss_sources(cursor)
@@ -239,8 +246,20 @@ MIGRATION_STEPS = (
     MigrationStep(
         name="curated-rss-subscriptions",
         from_version=JUEJIN_WEEKLY_VERSION,
-        to_version=SCHEMA_VERSION,
+        to_version=CURATED_RSS_VERSION,
         apply=seed_curated_rss_sources,
+    ),
+    MigrationStep(
+        name="immutable-business-delivery-plans-and-draft-retention",
+        from_version=CURATED_RSS_VERSION,
+        to_version=DELIVERY_RETENTION_VERSION,
+        apply=create_delivery_and_retention_schema,
+    ),
+    MigrationStep(
+        name="persistent-media-article-identities",
+        from_version=DELIVERY_RETENTION_VERSION,
+        to_version=SCHEMA_VERSION,
+        apply=create_news_identity_schema,
     ),
 )
 

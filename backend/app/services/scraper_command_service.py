@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from logging import getLogger
 from typing import Dict
 
-from ..core.exceptions import ConflictError, NotFoundError, ServiceUnavailableError
+from ..core.exceptions import ConfigurationError, ConflictError, NotFoundError, ServiceUnavailableError
 from ..core.runtime_keys import WORKER_READY_STATUSES
 
 logger = getLogger("uvicorn")
@@ -39,6 +39,9 @@ class ScraperCommandService:
                 raise ServiceUnavailableError("后台 Worker 未运行，暂时不能接受爬虫任务")
             self._runtime_state.ensure_runtime_initialized()
             self._runtime_state.require_scraper(name)
+            configuration_error = self._runtime_state.get_configuration_error(name)
+            if configuration_error:
+                raise ConfigurationError(configuration_error)
             if not self._scraper_runs.source_enabled(name):
                 raise ConflictError("来源已停用，请先启用该来源")
             cooldown = self._runtime_state.get_source_cooldown(name)

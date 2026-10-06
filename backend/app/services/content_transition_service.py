@@ -27,11 +27,14 @@ class ContentTransitionService:
             batch = clusters[batch_start : batch_start + self.WRITE_BATCH_SIZE]
             with self._transaction() as tx_repos:
                 for cluster in batch:
-                    existing, match_score = clusterer.best_existing_event(cluster.primary, prepared_events)
+                    source_titles = [member.item['title'] for member in cluster.members]
+                    existing, match_score = clusterer.best_existing_event(
+                        dict(cluster.primary, source_titles=source_titles), prepared_events)
                     if existing:
                         event_id = existing["id"]
                         canonical_news_id = existing["canonical_news_id"]
                         attached_events += 1
+                        clusterer.extend_existing_event(prepared_events, event_id, source_titles)
                     else:
                         event_id = tx_repos.events.create_event(cluster.primary, cluster.event_key)
                         canonical_news_id = cluster.primary["id"]
@@ -44,6 +47,7 @@ class ContentTransitionService:
                                 "canonical_news_id": canonical_news_id,
                                 "title": cluster.primary["title"],
                                 "source_count": len(cluster.members),
+                                "source_titles": source_titles,
                             },
                         )
 

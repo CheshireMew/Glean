@@ -47,6 +47,7 @@ class Settings:
     TRANSLATION_OUTPUT_PRICE: float = float(os.getenv('GLEAN_TRANSLATION_OUTPUT_PRICE', '0'))
 
     # AI & 3rd Party
+    BLOCKBEATS_API_KEY: str = os.getenv('BLOCKBEATS_API_KEY', '').strip()
     TELEGRAM_BOT_TOKEN: str = os.getenv('TELEGRAM_BOT_TOKEN', '')
     TELEGRAM_CHAT_ID: str = os.getenv('TELEGRAM_CHAT_ID', '')
     PUBLIC_SITE_URL: str = os.getenv(

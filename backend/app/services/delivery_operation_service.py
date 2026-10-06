@@ -91,6 +91,46 @@ class DeliveryOperationService:
         except ValueError as exc:
             raise BusinessError(str(exc)) from exc
 
+    def get_plan(self, plan_key: str) -> Dict | None:
+        return self._operation_repository().get_plan(plan_key)
+
+    def active_plans(self, operation_type: str, owner_id: int | None = None) -> List[Dict]:
+        return self._operation_repository().active_plans(operation_type, owner_id)
+
+    def plan_for_operation(self, operation_key: str) -> Dict | None:
+        return self._operation_repository().plan_for_operation(operation_key)
+
+    def accept_plan(self, plan_key: str, operation_type: str, owner_id: int, payload: Dict, operations: List[Dict]) -> Dict:
+        # The outer transaction also owns the caller's business acceptance state.
+        # No channel send occurs until the complete original target set is durable.
+        with self._transaction() as repos:
+            existing = repos.delivery_operations.get_plan(plan_key)
+            if existing:
+                return existing
+            for operation in operations:
+                self.prepare(
+                    operation['operation_key'], operation_type, operation.get('content_kind'),
+                    operation['messages'], operation.get('entry_ids') or [],
+                    {**operation.get('metadata', {}), 'plan_key': plan_key},
+                    channel_slug=operation['channel_slug'],
+                )
+            return repos.delivery_operations.create_plan(
+                plan_key, operation_type, owner_id, payload,
+                [operation['operation_key'] for operation in operations],
+            )
+
+    def plan_results(self, plan: Dict) -> List[Dict]:
+        return [self.get_operation(key) for key in plan['operation_keys']]
+
+    async def send_plan(self, plan: Dict) -> List[Dict]:
+        # A failed or unknown target requires an explicit retry. A worker restart
+        # may continue only pending parts, or reconcile already sent operations.
+        results = []
+        for key in plan['operation_keys']:
+            current = self.get_operation(key)
+            results.append(current if current['status'] in {'failed', 'needs_attention'} else await self.send(key))
+        return results
+
     async def send(self, operation_key: str) -> Dict:
         key = self.validate_operation_key(operation_key)
         operation_repo = self._operation_repository()

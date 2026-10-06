@@ -244,12 +244,13 @@ class EditorialWorkbenchRepository(BaseRepository):
         rows = self.execute(
             f"""
             SELECT di.draft_id, di.review_entry_id, di.position, di.section, di.included,
-                   di.overrides_json, r.title, r.source_site, r.source_url, r.published_at,
+                   di.overrides_json, di.snapshot_json, r.title, r.source_site, r.source_url, r.published_at,
                    r.review_summary, r.review_reason, r.review_score, r.review_category,
                    r.enriched_summary, r.enriched_impact, r.enriched_background,
-                   r.enrichment_citations, r.event_id, r.profile_slug, r.content_type
+                   r.enrichment_citations, r.event_id, r.profile_slug, r.content_type,
+                   r.editorial_version, r.editorial_updated_at
             FROM publication_draft_items di
-            JOIN {REVIEW_TABLE} r ON r.id = di.review_entry_id
+            LEFT JOIN {REVIEW_TABLE} r ON r.id = di.review_entry_id
             WHERE di.draft_id = ?
             ORDER BY di.position
             """,
@@ -258,6 +259,10 @@ class EditorialWorkbenchRepository(BaseRepository):
         result = []
         for row in rows:
             item = dict(row)
+            snapshot = json.loads(item.pop('snapshot_json') or '{}')
+            if snapshot:
+                item.update({key: value for key, value in snapshot.items()
+                             if key not in {'draft_id', 'review_entry_id', 'position', 'section', 'included', 'overrides'}})
             item["overrides"] = json.loads(item.pop("overrides_json") or "{}")
             try:
                 item["citations"] = json.loads(item.pop("enrichment_citations") or "[]")
@@ -265,6 +270,14 @@ class EditorialWorkbenchRepository(BaseRepository):
                 item["citations"] = []
             result.append(item)
         return result
+
+    def save_draft_snapshots(self, draft_id: int, entries: list[Dict]) -> None:
+        for entry in entries:
+            snapshot = {**entry, 'original_review_entry_id': entry['id']}
+            self.execute('''
+                UPDATE publication_draft_items SET snapshot_json=?
+                WHERE draft_id=? AND review_entry_id=?
+            ''', (json.dumps(snapshot, ensure_ascii=False, default=str), draft_id, entry['id']))
 
     def list_drafts(self, status: str | None = None, limit: int = 100) -> list[Dict]:
         where = "WHERE d.status = ?" if status else ""

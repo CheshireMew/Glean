@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Dict, List, Optional
+import json
 
 from shared.content_contract import EVENT_SOURCE_TABLE, EVENT_TABLE
 
@@ -18,10 +19,13 @@ class EventQueryRepository(BaseRepository):
             where += " AND last_seen_at >= ?"
             params.append(utc_cutoff(time_window_hours))
         cursor = self.execute(
-            f"SELECT id, canonical_news_id, title, content_type, published_at, source_count FROM {EVENT_TABLE} WHERE {where} ORDER BY last_seen_at DESC LIMIT 2000",
+            f"""SELECT id, canonical_news_id, title, content_type, published_at, source_count,
+                (SELECT json_group_array(n.title) FROM {EVENT_SOURCE_TABLE} es
+                 JOIN news n ON n.id = es.news_id WHERE es.event_id = {EVENT_TABLE}.id) AS source_titles
+                FROM {EVENT_TABLE} WHERE {where} ORDER BY last_seen_at DESC LIMIT 2000""",
             tuple(params),
         )
-        return [dict(row) for row in cursor.fetchall()]
+        return [dict(row, source_titles=json.loads(row['source_titles'])) for row in cursor.fetchall()]
 
     def get_event(self, event_id: int) -> Optional[Dict]:
         row = self.execute(f"SELECT * FROM {EVENT_TABLE} WHERE id = ?", (event_id,)).fetchone()

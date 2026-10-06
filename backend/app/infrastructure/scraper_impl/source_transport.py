@@ -4,7 +4,7 @@ import asyncio
 import random
 from abc import ABC, abstractmethod
 from typing import Any, Dict
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -65,21 +65,27 @@ class HttpSourceTransport(SourceTransport):
             self.client = None
 
     async def fetch(self, url: str, delay_range: tuple[float, float] = (0.3, 1.0), max_retries: int = 3,
-                    *, method: str = "GET", json_body: dict | None = None) -> httpx.Response:
+                    *, method: str = "GET", json_body: dict | None = None,
+                    headers: dict | None = None) -> httpx.Response:
         if not self.client:
             raise RuntimeError("HTTP transport has not been started")
         attempts = max(1, min(max_retries, 2))
         for attempt in range(attempts):
             current_url, current_method, current_body = url, method.upper(), json_body
+            current_headers = dict(headers or {})
             try:
                 for redirect in range(6):
                     await self.access.wait(current_url)
-                    response = await self.client.request(current_method, current_url, json=current_body)
+                    response = await self.client.request(current_method, current_url, json=current_body, headers=current_headers)
                     self.access.inspect(current_url, response.status_code, response.headers, response.text[:65536])
                     if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
                         if redirect == 5:
                             raise SourceAccessError("采集地址重定向次数过多，已停止")
-                        current_url = urljoin(current_url, response.headers["location"])
+                        destination = urljoin(current_url, response.headers["location"])
+                        if urlsplit(current_url).netloc != urlsplit(destination).netloc:
+                            current_headers = {k: v for k, v in current_headers.items()
+                                               if k.lower() not in {"api-key", "authorization", "cookie"}}
+                        current_url = destination
                         if response.status_code == 303 or (response.status_code in (301, 302) and current_method == "POST"):
                             current_method, current_body = "GET", None
                         continue

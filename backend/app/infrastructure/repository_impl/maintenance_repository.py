@@ -8,6 +8,7 @@ from shared.content_contract import ARCHIVE_TABLE, EVENT_TABLE, REVIEW_TABLE
 
 from .base_repository import BaseRepository
 from ..lease_fencing import assert_current_operation_lease
+from ..sqlite.editorial_retention_schema import protected_review_sql
 
 
 class MaintenanceRepository(BaseRepository):
@@ -33,7 +34,10 @@ class MaintenanceRepository(BaseRepository):
             ),
             "delivery_operations": self._delete_batch(
                 "delivery_operations",
-                "status = 'sent' AND updated_at < ?",
+                """status = 'sent' AND updated_at < ? AND NOT EXISTS (
+                    SELECT 1 FROM delivery_plans p, json_each(p.operation_keys_json) k
+                    WHERE p.finalized_at IS NULL AND k.value = delivery_operations.operation_key
+                )""",
                 (cutoff,),
                 limit,
             ),
@@ -48,7 +52,9 @@ class MaintenanceRepository(BaseRepository):
                 conn.execute("BEGIN IMMEDIATE")
                 started_transaction = True
             rows = conn.execute(
-                f"SELECT id FROM {EVENT_TABLE} WHERE last_seen_at < ? ORDER BY last_seen_at LIMIT ?",
+                f"""SELECT id FROM {EVENT_TABLE} WHERE last_seen_at < ? AND NOT EXISTS (
+                    SELECT 1 FROM {REVIEW_TABLE} r WHERE r.event_id={EVENT_TABLE}.id AND {protected_review_sql('r')}
+                ) ORDER BY last_seen_at, id LIMIT ?""",
                 (cutoff, limit),
             ).fetchall()
             event_ids = [int(row["id"] if isinstance(row, sqlite3.Row) else row[0]) for row in rows]
@@ -87,7 +93,7 @@ class MaintenanceRepository(BaseRepository):
             ),
             "orphan_reviews": self._delete_batch(
                 REVIEW_TABLE,
-                "event_id IS NULL AND review_status IN (?, ?) AND published_at < ?",
+                f"event_id IS NULL AND review_status IN (?, ?) AND published_at < ? AND NOT {protected_review_sql(REVIEW_TABLE)}",
                 (*self.TERMINAL_REVIEW_STATUSES, cutoff),
                 limit,
             ),

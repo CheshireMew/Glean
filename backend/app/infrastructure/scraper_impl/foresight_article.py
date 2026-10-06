@@ -69,6 +69,8 @@ class BaseForesightColumnScraper(ArticleScraper):
                 if self.should_stop_scraping(title, url, published_at):
                     print("  [增量抓取] 遇到已抓取文章，停止")
                     break
+                if self.incremental_mode and (url in self.existing_urls or url == self.last_news_url):
+                    continue
                 if len(articles) >= self.max_items:
                     print(f"  [数量限制] 已抓取 {self.max_items} 篇，停止")
                     break

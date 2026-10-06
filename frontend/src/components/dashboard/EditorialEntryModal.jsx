@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { Alert, Button, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Spin, Table, Tabs, Timeline, Typography, message } from 'antd';
 
@@ -36,13 +36,19 @@ function diffRows(entry) {
 export default function EditorialEntryModal({ entryId, open, onClose, onSaved }) {
     const [form] = Form.useForm();
     const [state, setState] = useState({ loading: false, saving: false, error: '', entry: null });
+    const sessionRef = useRef(null);
+    const isCurrent = useCallback((session) => Boolean(session?.active && sessionRef.current === session), []);
 
-    const load = async () => {
-        if (!entryId) return;
+    const load = useCallback(async (session = sessionRef.current) => {
+        if (!isCurrent(session)) return;
+        const loadVersion = ++session.loadVersion;
+        const acceptsResult = () => isCurrent(session) && session.loadVersion === loadVersion;
         setState((current) => ({ ...current, loading: true, error: '' }));
         try {
-            const response = await getEditorialEntry(entryId);
+            const response = await getEditorialEntry(session.entryId);
+            if (!acceptsResult()) return;
             const entry = response.data;
+            if (entry.id !== session.entryId) throw new Error('加载结果与当前内容不一致，请重试');
             form.setFieldsValue({
                 title: entry.title,
                 review_status: entry.review_status,
@@ -60,20 +66,33 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
             });
             setState({ loading: false, saving: false, error: '', entry });
         } catch (error) {
+            if (!acceptsResult()) return;
             setState({ loading: false, saving: false, error: error.message || '编辑内容加载失败', entry: null });
         }
-    };
+    }, [form, isCurrent]);
 
     useEffect(() => {
-        if (open) void load();
-        else form.resetFields();
-        // load is intentionally keyed by the selected entry.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [entryId, open]);
+        form.resetFields();
+        setState({ loading: Boolean(open && entryId), saving: false, error: '', entry: null });
+        if (!open || !entryId) return;
+        const session = { entryId, active: true, loadVersion: 0 };
+        sessionRef.current = session;
+        void load(session);
+        return () => {
+            session.active = false;
+            if (sessionRef.current === session) sessionRef.current = null;
+        };
+    }, [entryId, open, form, load]);
+
+    const editable = open && state.entry?.id === entryId && !state.loading && !state.saving;
 
     const save = async () => {
+        const session = sessionRef.current;
+        if (!editable || !isCurrent(session)) return;
+        const loadVersion = session.loadVersion;
         try {
             const values = await form.validateFields();
+            if (!isCurrent(session) || session.loadVersion !== loadVersion) return;
             let citations;
             try {
                 citations = JSON.parse(values.enrichment_citations_text || '[]');
@@ -85,41 +104,52 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
             setState((current) => ({ ...current, saving: true, error: '' }));
             const payload = { ...values, enrichment_citations: citations };
             delete payload.enrichment_citations_text;
-            const response = await updateEditorialEntry(entryId, payload);
+            const response = await updateEditorialEntry(session.entryId, payload);
+            if (!isCurrent(session)) return;
+            if (response.data.id !== session.entryId) throw new Error('保存结果与当前内容不一致，请重新加载');
             setState({ loading: false, saving: false, error: '', entry: response.data });
             message.success('修订已保存');
             onSaved?.(response.data);
-            await load();
+            await load(session);
         } catch (error) {
+            if (!isCurrent(session)) return;
             if (error?.errorFields) return;
             setState((current) => ({ ...current, saving: false, error: error.message || '保存失败' }));
         }
     };
 
     const restore = async (revisionNumber) => {
+        const session = sessionRef.current;
+        if (!editable || !isCurrent(session)) return;
         setState((current) => ({ ...current, saving: true, error: '' }));
         try {
-            await restoreEditorialRevision(entryId, revisionNumber);
+            await restoreEditorialRevision(session.entryId, revisionNumber);
+            if (!isCurrent(session)) return;
             message.success(`已恢复修订 ${revisionNumber}`);
-            await load();
-            onSaved?.();
+            await load(session);
+            if (isCurrent(session)) onSaved?.();
         } catch (error) {
+            if (!isCurrent(session)) return;
             setState((current) => ({ ...current, saving: false, error: error.message || '恢复失败' }));
         }
     };
 
     const accept = async () => {
+        const session = sessionRef.current;
+        if (!editable || !isCurrent(session)) return;
         try {
-            await addEditorialFeedback(entryId, { outcome: 'accepted', notes: '人工确认可用' });
+            await addEditorialFeedback(session.entryId, { outcome: 'accepted', notes: '人工确认可用' });
+            if (!isCurrent(session)) return;
             message.success('已记录人工确认');
-            await load();
+            await load(session);
         } catch (error) {
+            if (!isCurrent(session)) return;
             setState((current) => ({ ...current, error: error.message || '反馈保存失败' }));
         }
     };
 
     const editPanel = (
-        <Form form={form} layout="vertical" disabled={state.loading || state.saving}>
+        <Form form={form} layout="vertical" disabled={!editable}>
             <Form.Item name="title" label="发布标题" rules={[{ required: true, message: '请输入标题' }]}><Input maxLength={500} showCount /></Form.Item>
             <Form.Item name="review_status" label="审核决定" extra="人工入选需填写摘要和入选依据；保存后可在发布中心创建草稿。"><Select options={[{value:'pending',label:'待审核'},{value:'selected',label:'入选'},{value:'discarded',label:'弃选'}]} /></Form.Item>
             <Row gutter={16}>
@@ -142,7 +172,7 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
     const historyPanel = state.entry ? (
         <div>
             <Space wrap style={{ marginBottom: 16 }}>
-                <Button onClick={accept}>确认当前内容可用</Button>
+                <Button onClick={accept} disabled={!editable}>确认当前内容可用</Button>
                 <span style={{ color: '#64748b' }}>当前编辑版本：{state.entry.editorial_version || 0}</span>
             </Space>
             <Divider orientation="left">编辑前原稿与当前版本</Divider>
@@ -165,7 +195,7 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
                         <strong>修订 {revision.revision_number}</strong> · {revision.actor} · {formatLocalDateTime(revision.created_at)}
                         {revision.change_note && <p style={{ margin: '4px 0', color: '#475569' }}>{revision.change_note}</p>}
                         {revision.changed_fields?.length > 0 && <p style={{ margin: '4px 0', color: '#94a3b8' }}>字段：{revision.changed_fields.join('、')}</p>}
-                        {index !== 0 && <Button size="small" onClick={() => restore(revision.revision_number)} disabled={state.saving}>恢复到此版本</Button>}
+                        {index !== 0 && <Button size="small" onClick={() => restore(revision.revision_number)} disabled={!editable}>恢复到此版本</Button>}
                     </div>
                 ),
             }))} />
@@ -181,9 +211,9 @@ export default function EditorialEntryModal({ entryId, open, onClose, onSaved })
             onCancel={onClose}
             width={920}
             destroyOnHidden
-            footer={<Space><Button onClick={onClose}>关闭</Button><Button type="primary" loading={state.saving} onClick={save}>保存新修订</Button></Space>}
+            footer={<Space><Button onClick={onClose}>关闭</Button><Button type="primary" loading={state.saving} disabled={!editable} onClick={save}>保存新修订</Button></Space>}
         >
-            {state.error && <Alert type="error" showIcon message={state.error} action={<Button size="small" onClick={load}>重试</Button>} style={{ marginBottom: 16 }} />}
+            {state.error && <Alert type="error" showIcon message={state.error} action={<Button size="small" onClick={() => load()}>重试</Button>} style={{ marginBottom: 16 }} />}
             {state.loading ? <div style={{ padding: 48, textAlign: 'center' }}><Spin /></div> : <Tabs items={[{ key: 'edit', label: '编辑', children: editPanel }, { key: 'history', label: `修订记录 (${state.entry?.revisions?.length || 0})`, children: historyPanel }]} />}
         </Modal>
     );

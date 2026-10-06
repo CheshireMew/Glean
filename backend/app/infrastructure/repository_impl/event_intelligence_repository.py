@@ -250,6 +250,10 @@ class EventIntelligenceRepository(BaseRepository):
         )
         return int(cursor.lastrowid)
 
+    def get_update(self, update_id: int) -> Optional[Dict]:
+        row = self.execute("SELECT * FROM event_updates WHERE id = ?", (update_id,)).fetchone()
+        return dict(row) if row else None
+
     def update_event_update(self, update_id: int, values: Dict, actor: str) -> bool:
         allowed = {"update_type", "title", "summary", "occurred_at", "source_news_id", "is_public"}
         changes = {key: value for key, value in values.items() if key in allowed}

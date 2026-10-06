@@ -20,6 +20,8 @@ from shared.content_contract import (
 from backend.app.infrastructure.repository_impl.content_scope import CONTENT_SCOPE_PLANS
 from backend.app.infrastructure.scraper_impl.article_base import ArticleScraper
 from backend.app.infrastructure.scraper_impl.base import BaseScraper
+from backend.app.infrastructure.scraper_impl.media_feed import MediaApiScraper, MediaRssScraper, MediaSnapshot
+from backend.app.infrastructure.scrapers import ScraperCatalog
 from backend.app.infrastructure.scraper_impl.content_tools import parse_relative_time
 from backend.app.domain.delivery import derive_delivery_operation_status
 from backend.app.domain.events import select_event_primary
@@ -108,29 +110,26 @@ class ArchitectureBoundaryTest(unittest.TestCase):
                 seen.add(key)
         self.assertEqual(duplicates, [])
 
-    def test_standard_article_adapters_use_the_shared_lifecycle(self):
-        standard = {
-            "blockbeats_article.py",
-            "chaincatcher_article.py",
-            "foresight_article.py",
-            "marsbit_article.py",
-            "odaily_article.py",
-            "panews_article.py",
-            "techflow_article.py",
-            "wublock_article.py",
-        }
-        overrides = []
-        for name in standard:
-            for node in parse(SCRAPERS / name).body:
-                if isinstance(node, ast.ClassDef) and any(
-                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and item.name == "scrape_important_news"
-                    for item in node.body
-                ):
-                    overrides.append(name)
-        self.assertEqual(overrides, [])
+    def test_article_adapters_use_the_shared_lifecycle_for_their_transport(self):
+        for definition in ScraperCatalog().definitions():
+            if definition.content_kind != "article" or definition.authority_type != "media":
+                continue
+            cls = definition.scraper_cls
+            with self.subTest(source=definition.name):
+                if definition.name == "blockbeats_article":
+                    # The same adapter delegates to API or reads static HTML,
+                    # depending on whether an API Key was configured at startup.
+                    source = (SCRAPERS / "blockbeats_article.py").read_text(encoding="utf-8")
+                    self.assertTrue(issubclass(cls, MediaApiScraper))
+                    self.assertIn("return await super().scrape_important_news()", source)
+                    self.assertIn("self.create_result_buffer()", source)
+                else:
+                    lifecycle = (MediaRssScraper if issubclass(cls, MediaRssScraper)
+                                 else MediaApiScraper if issubclass(cls, MediaApiScraper)
+                                 else ArticleScraper)
+                    self.assertIs(cls.scrape_important_news, lifecycle.scrape_important_news)
 
-    def test_flash_adapters_use_the_shared_candidate_policy(self):
+    def test_flash_adapters_use_the_shared_candidate_policy_for_their_transport(self):
         names = {
             "blockbeats.py",
             "chaincatcher.py",
@@ -140,11 +139,17 @@ class ArchitectureBoundaryTest(unittest.TestCase):
             "panews.py",
             "techflow.py",
         }
+        catalog = ScraperCatalog()
         for name in names:
             source = (SCRAPERS / name).read_text(encoding="utf-8")
-            self.assertIn("create_candidate_collector", source, name)
-            self.assertIn("collector.consider", source, name)
-            self.assertIn("collector.append_standard", source, name)
+            cls = catalog.get(Path(name).stem).scraper_cls
+            if cls.transport_kind == "browser":
+                self.assertIn("create_candidate_collector", source, name)
+                self.assertIn("collector.consider", source, name)
+                self.assertIn("collector.append_standard", source, name)
+            else:
+                self.assertTrue(issubclass(cls, (MediaRssScraper, MediaApiScraper)), name)
+                self.assertIs(cls.select_new_items, MediaSnapshot.select_new_items, name)
             self.assertNotIn("collector.append(", source, name)
             self.assertNotIn("processed_urls", source, name)
 

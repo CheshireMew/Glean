@@ -16,7 +16,7 @@ jobs:
       PYTHONUTF8: '1'
       JWT_SECRET_KEY: ci-only-secret-at-least-32-bytes-long
       ADMIN_USERNAME: ci-admin
-      ADMIN_PASSWORD: ci-password
+      ADMIN_PASSWORD: ci-password-only-2026
       npm_config_cache: D:\Tools\npm-cache
 
     steps:
@@ -48,8 +48,11 @@ jobs:
       - name: Verify backend
         run: |
           python -m compileall -q backend
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m ruff check backend shared scripts/windows --select F
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest discover -s backend/tests -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install frontend dependencies
         working-directory: frontend
@@ -59,7 +62,12 @@ jobs:
         working-directory: frontend
         run: |
           npm run lint
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run verify:architecture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build:release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run verify:release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

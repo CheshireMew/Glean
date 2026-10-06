@@ -20,6 +20,14 @@ class ScraperRuntimeStateService:
         error = self._source_access.for_definition(definition) if definition else None
         return {"cooldown_until": error.until, "cooldown_reason": str(error)} if error else {}
 
+    def get_configuration_error(self, name: str, definition=None) -> str | None:
+        definition = definition or self._scraper_registry.get(name)
+        if definition is None:
+            return None
+        scraper = definition.build_scraper()
+        check = getattr(scraper, "configuration_error", None)
+        return check() if check else None
+
     @staticmethod
     def _config_key(name: str) -> str:
         return f"scraper.{name}.runtime"
@@ -113,6 +121,7 @@ class ScraperRuntimeStateService:
                 **states.get(name, {"scraper_name": name, "status": "idle", "logs": [], "items_scraped": 0}),
                 **self.get_scraper_config(name, definition, configs.get(self._config_key(name))),
                 **self.get_source_cooldown(name, definition),
+                "configuration_error": self.get_configuration_error(name, definition),
                 "refresh_on_view": False,
             }
         return payload

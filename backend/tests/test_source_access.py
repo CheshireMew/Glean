@@ -214,6 +214,8 @@ class SourceAccessTest(unittest.IsolatedAsyncioTestCase):
                     inner.wfile.write(b'<title>Articles</title><img src="/image.png"><script>fetch("/api").then(() => fetch("/after"))</script>')
                 elif inner.path == "/ready":
                     inner.wfile.write(b'<title>Articles</title><body><script>fetch("/slow").then(r => r.text()).then(() => document.body.dataset.loaded = "yes")</script>')
+                elif inner.path == "/prefetch":
+                    inner.wfile.write(b'<title>Articles</title><script>for(let i=0;i<20;i++) fetch("/prefetched?i="+i,{headers:{"Next-Router-Prefetch":"1"}}).catch(()=>{})</script>')
                 else:
                     inner.wfile.write(b"ok")
 
@@ -233,6 +235,20 @@ class SourceAccessTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(hits.count("/landing"), 1)
             page = await browser_runtime.fetch_page_with_delay(owner, owner.base_url.replace('/list', '/ready'))
             self.assertEqual(await page.locator('body').get_attribute('data-loaded'), "yes")
+            await browser_runtime.fetch_page_with_delay(owner, owner.base_url.replace('/list', '/prefetch'))
+            self.assertFalse(any(path.startswith('/prefetched') for path in hits))
+            # Close while a content request is still waiting for its response.
+            await owner.page.goto(owner.base_url.replace('/list', '/ready'), wait_until='domcontentloaded')
+            for _ in range(20):
+                if owner._source_requests.get(owner.page):
+                    break
+                await asyncio.sleep(0.01)
+            self.assertTrue(owner._source_requests.get(owner.page))
+            await browser_runtime.close_browser(owner)
+            self.assertIsNone(owner._source_access_error)
+            self.assertIsNone(self.guard.cooldown(owner.base_url))
+            with patch.object(browser_runtime, "source_access", self.guard):
+                await browser_runtime.init_browser(owner)
             hits.clear()
             self.guard.defer(f"http://localhost:{server.server_port}/landing", "HTTP 429")
             with self.assertRaises(SourceCoolingDown):
