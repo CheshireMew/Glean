@@ -4,7 +4,7 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.15.1
 beautifulsoup4==4.14.3
-certifi==2026.4.22
+certifi==2026.10.19
 click==8.4.1
 colorama==0.4.6
 distro==1.9.0
